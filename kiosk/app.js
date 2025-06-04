@@ -19,3 +19,5 @@ app.use("/test", express.static(path.join(__dirname, "test")));
 app.listen(PORT, () => {
   console.log(`Kiosk server running at http://localhost:${PORT}`);
 });
+
+
