@@ -32,6 +32,8 @@ function startKioskFlow() {
   }, 3000);
 }
 
+let socket; //WebSocket
+
 //키오스크 페이지 로드 시 초기화 작업 수행
 window.onload = () => {
   const params = new URLSearchParams(window.location.search);
@@ -39,12 +41,13 @@ window.onload = () => {
   const expireTime = params.get("expireTime");
 
   if (sessionId) {
+    //세션 시작되면 로그 출력
     console.log("index.html에서 세션 시작됨");
     console.log("  - sessionId:", sessionId);
     console.log("  - expireTime:", expireTime);
 
     sessionStorage.setItem("sessionId", sessionId);
-
+    //만료 시간 저장
     if (expireTime) {
       sessionStorage.setItem("expireTime", expireTime);
 
@@ -52,6 +55,7 @@ window.onload = () => {
       const now = Date.now();
       const timeRemaining = expireTimestamp - now;
 
+      //남은 시간이 양수인 경우에만 타이머 시작
       if (timeRemaining > 0) {
         setTimeout(() => {
           alert("세션이 만료되었습니다. 처음 화면으로 돌아갑니다.");
@@ -73,4 +77,30 @@ window.onload = () => {
   } else {
     alert("세션 ID 없음: /test/session-start.html에서 먼저 시작해주세요.");
   }
+
+
+  // WebSocket 연결
+  socket = new WebSocket("ws://localhost:3000");
+  socket.onopen = () => console.log("WebSocket 연결됨");
+
+  socket.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+
+    if (data.type === "scanResult") {
+      console.log("상품 인식 데이터:", data.products);
+
+      // 이후 화면 전환 및 합산 로직 호출
+      goToScreen("screen-receipt");
+
+      setTimeout(() => {
+        goToScreen("screen-goodbye");
+        setTimeout(() => goToScreen("screen-start"), 5000);
+      }, 3000);
+    }
+  };
+
+  // 임시 버튼(스캔 중 페이지)에 이벤트 연결
+  document.querySelector(".mock-scan-btn").onclick = () => {
+    socket.send(JSON.stringify({ action: "mock-scan" }));
+  };
 };
