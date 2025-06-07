@@ -60,7 +60,7 @@ window.onload = () => {
         setTimeout(() => {
           alert("세션이 만료되었습니다. 처음 화면으로 돌아갑니다.");
           // 콘솔에 만료 로그 출력
-          console.log("⏰ 세션 만료됨");
+          console.log("세션 만료됨");
           console.log("  - expireTime:", expireTime);
           console.log("  - 현재 시각:", new Date().toISOString());
 
