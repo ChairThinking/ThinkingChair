@@ -1,28 +1,62 @@
+// WebSocket 및 컨트롤러 로드
+const fs = require("fs");
+const path = require("path");
 const WebSocket = require("ws");
+const kioskController = require("../controllers/kioskController");
 
-// 외부에서 Express 서버를 받아 WebSocket 서버 초기화
-function initWebSocket(server) {
-  const wss = new WebSocket.Server({ server }); // 기존 HTTP 서버 위에 WebSocket 서버 생성
+// Express 서버를 인자로 받아 WebSocket 서버 초기화
+module.exports = (server) => {
+  // 기존 HTTP 서버 위에 WebSocket 서버 생성
+  const wss = new WebSocket.Server({ server });
 
+  // 클라이언트가 WebSocket에 연결되었을 때
   wss.on("connection", (ws) => {
     console.log("WebSocket 클라이언트 연결됨");
 
-    // 클라이언트로부터 메시지 수신 시 처리
     ws.on("message", (message) => {
-      const data = JSON.parse(message);
+      console.log("클라이언트로부터 수신한 메시지:", message);
 
-      // 프론트에서 보낸 mock-scan 트리거 처리 (mockProducts 배열에서 중복 없이 무작위로 3개를 추출하는 로직)
-      const shuffled = mockProducts.sort(() => 0.5 - Math.random()); // 배열 무작위 섞기
-      const selected = shuffled.slice(0, 3); // 처음 3개 선택
+      let parsed;
+      try {
+        parsed = JSON.parse(message);
+      } catch (e) {
+        console.error("메시지 파싱 실패:", e);
+        return;
+      }
 
-      ws.send(
-        JSON.stringify({
-          type: "scanResult",
-          products: selected,
-        })
-      );
+      if (parsed.action === "simulateScan") {
+        console.log("simulateScan 메시지 확인됨");
+
+        const result = kioskController.simulateScan();
+        console.log("스캔 결과:", result);
+
+        // refunds.json에 스캔 및 환불 결과 저장
+        const refundDataPath = path.join(__dirname, "../test/refunds.json");
+        let refundList = [];
+
+        if (fs.existsSync(refundDataPath)) {
+          try {
+            refundList = JSON.parse(fs.readFileSync(refundDataPath));
+          } catch (err) {
+            console.error("refunds.json 파싱 실패:", err);
+          }
+        }
+
+        refundList.push({
+          timestamp: new Date().toISOString(),
+          ...result,
+        });
+
+        fs.writeFileSync(refundDataPath, JSON.stringify(refundList, null, 2));
+        console.log("refunds.json에 저장 완료");
+
+        ws.send(
+          JSON.stringify({
+            type: "scanResult",
+            ...result,
+          })
+        );
+      }
     });
   });
-}
-
-module.exports = initWebSocket;
+};
