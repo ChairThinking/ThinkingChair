@@ -184,7 +184,7 @@ html {
 }
 
 /* 3페이지 스캔중 mock 버튼 */
-.mock-scan-btn {
+.simulate-scan-btn {
   font-size: 40px;
   padding: 20px 60px;
   margin-top: 40px;
