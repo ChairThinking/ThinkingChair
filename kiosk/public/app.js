@@ -7,47 +7,50 @@ function goToScreen(screenId) {
   if (target) target.classList.add("active");
 }
 
-// 키오스크 세션 흐름 시작
+// 시뮬레이션 버튼 바인딩 함수
+function setupSimulateButton() {
+  const btn = document.getElementById("simulate-scan-btn");
+  if (btn && !btn.dataset.bound) {
+    // 이미 바인딩됐는지 확인
+    btn.addEventListener("click", () => {
+      console.log("시뮬레이션 버튼 클릭됨");
+      socket.send(JSON.stringify({ action: "simulateScan" }));
+    });
+    btn.dataset.bound = "true"; // 중복 방지 플래그 추가
+  }
+}
+
+// 키오스크 세션 흐름 시작 (바구니 -> 스캔중까지)
 function startKioskFlow() {
   goToScreen("screen-basket");
 
   setTimeout(() => {
     goToScreen("screen-scan");
 
+    // 시뮬레이션 버튼 이벤트 연결
     setTimeout(() => {
-      goToScreen("screen-receipt");
-
-      setTimeout(() => {
-        goToScreen("screen-goodbye");
-
-        //5초 후 초기화면으로 이동
-        setTimeout(() => {
-          goToScreen("screen-start");
-
-          // 세션 초기화가 필요하다면 여기서 localStorage.clear() 같은 처리도 가능
-          // 추후 세션 정보 제거 필요
-        }, 5000);
-      }, 3000);
-    }, 3000);
+      setupSimulateButton();
+    }, 100); // 약간의 지연 추가로 DOM이 확실히 렌더링되도록 함
   }, 3000);
 }
 
-let socket; //WebSocket
+// 키오스크 페이지 로드 시 초기화 작업 수행
 
-//키오스크 페이지 로드 시 초기화 작업 수행
+let socket;
 window.onload = () => {
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get("sessionId");
   const expireTime = params.get("expireTime");
 
   if (sessionId) {
-    //세션 시작되면 로그 출력
+    // 세션 시작되면 로그 출력
     console.log("index.html에서 세션 시작됨");
     console.log("  - sessionId:", sessionId);
     console.log("  - expireTime:", expireTime);
 
     sessionStorage.setItem("sessionId", sessionId);
-    //만료 시간 저장
+
+    // 세션 만료 타이머 설정
     if (expireTime) {
       sessionStorage.setItem("expireTime", expireTime);
 
@@ -55,7 +58,7 @@ window.onload = () => {
       const now = Date.now();
       const timeRemaining = expireTimestamp - now;
 
-      //남은 시간이 양수인 경우에만 타이머 시작
+      // 남은 시간이 양수인 경우에만 타이머 시작
       if (timeRemaining > 0) {
         setTimeout(() => {
           alert("세션이 만료되었습니다. 처음 화면으로 돌아갑니다.");
@@ -73,34 +76,44 @@ window.onload = () => {
       }
     }
 
+    // 시작 버튼 클릭 시 키오스크 흐름 시작
     document.querySelector(".start-btn").onclick = startKioskFlow;
   } else {
     alert("세션 ID 없음: /test/session-start.html에서 먼저 시작해주세요.");
   }
 
-
   // WebSocket 연결
   socket = new WebSocket("ws://localhost:3000");
-  socket.onopen = () => console.log("WebSocket 연결됨");
+
+  socket.onopen = () => {
+    console.log("WebSocket 연결됨");
+    setupSimulateButton(); // 여기서 호출해야 연결 후 이벤트가 정상 작동
+  };
 
   socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
 
     if (data.type === "scanResult") {
-      console.log("상품 인식 데이터:", data.products);
+      console.log("상품 인식 결과:", data);
+      sessionStorage.setItem("refundAmount", data.refund);
 
-      // 이후 화면 전환 및 합산 로직 호출
-      goToScreen("screen-receipt");
-
+      // 1초 대기 후 영수증 출력 화면으로 전환
       setTimeout(() => {
-        goToScreen("screen-goodbye");
-        setTimeout(() => goToScreen("screen-start"), 5000);
-      }, 3000);
-    }
-  };
+        goToScreen("screen-receipt");
 
-  // 임시 버튼(스캔 중 페이지)에 이벤트 연결
-  document.querySelector(".mock-scan-btn").onclick = () => {
-    socket.send(JSON.stringify({ action: "mock-scan" }));
+        // 3초 후 종료 인사 화면으로
+        setTimeout(() => {
+          goToScreen("screen-goodbye");
+
+          // 5초 후 초기 화면으로 복귀
+          setTimeout(() => {
+            goToScreen("screen-start");
+
+            // 세션 초기화
+            sessionStorage.clear();
+          }, 5000);
+        }, 3000);
+      }, 1000);
+    }
   };
 };
