@@ -2,8 +2,8 @@
 #include <ESP8266HTTPClient.h>
 #include <WiFiClient.h>
 
-const char* ssid = "HJY";       // 와이파이 이름
-const char* password = "123456789"; // 와이파이 비밀번호
+const char* ssid = "id";       // 와이파이 이름
+const char* password = "pw"; // 와이파이 비밀번호
 
 // 1단계에서 얻은 본인의 서버 URL로 반드시 교체하세요!
 const char* serverUrl = "https://f5rvb6lfeoys4jk2a2a32z7ufy0iubkl.lambda-url.ap-northeast-2.on.aws/";
