@@ -27,3 +27,5 @@ Thumbs.db
 admin-dashboard.bak/
 *.tmp
 *.swp
+
+.env.local.backup
