@@ -1,6 +1,29 @@
+# Node / Package Managers
 node_modules/
-module/
-package.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
+# Build Outputs
+build/
+dist/
+coverage/
 
+# Env / Secrets
+.env
+.env.*.local
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Backups / Temp
+admin-dashboard.bak/
+*.tmp
+*.swp
