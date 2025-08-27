@@ -14,7 +14,7 @@ export default function StockPage() {
   const itemsPerPage = 10;
 
   useEffect(() => {
-    axios.get("http://localhost:4000/api/store-products")
+    axios.get("/api/store-products") // ← 상대 경로로 수정
       .then(res => {
         setProducts(res.data.map(p => ({
           id: p.id,
@@ -59,7 +59,7 @@ export default function StockPage() {
 
     try {
       for (const id of selectedIds) {
-        await axios.delete(`http://localhost:4000/api/store-products/${id}`);
+        await axios.delete(`/api/store-products/${id}`); // ← 상대 경로로 수정
       }
       setProducts(products.filter(p => !selectedIds.includes(p.id)));
       setSelectedIds([]);

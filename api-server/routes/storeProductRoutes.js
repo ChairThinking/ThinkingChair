@@ -1,36 +1,19 @@
-// routes/purchaseSessionRoutes.js
 const express = require('express');
 const router = express.Router();
+const storeProductController = require('../controllers/storeProductController');
 
-const {
-  createSession,
-  getSessionByCode,
-  addItem,
-  removeItem,
-  bindCard,
-  checkout,
-  cancelSession,
-} = require('../controllers/purchaseSessionController');
+// [POST] 매장 상품 등록
+// body: { product_id, store_id?, sale_price, quantity }
+router.post('/', storeProductController.registerStoreProduct);
 
-// POST   /api/purchase-sessions
-router.post('/', createSession);
+// [GET] 매장 상품 전체 조회 (store_id=1 고정)
+router.get('/', storeProductController.getAllStoreProducts);
 
-// GET    /api/purchase-sessions/:session_code
-router.get('/:session_code', getSessionByCode);
+// [PUT] 매장 상품 수정 (판매가/수량) → 인벤토리 로그 자동 기록
+// body: { sale_price, quantity }
+router.put('/:id', storeProductController.updateStoreProduct);
 
-// POST   /api/purchase-sessions/:session_code/items
-router.post('/:session_code/items', addItem);
-
-// DELETE /api/purchase-sessions/:session_code/items/:item_id
-router.delete('/:session_code/items/:item_id', removeItem);
-
-// PATCH  /api/purchase-sessions/:session_code/bind-card
-router.patch('/:session_code/bind-card', bindCard);
-
-// POST   /api/purchase-sessions/:session_code/checkout
-router.post('/:session_code/checkout', checkout);
-
-// POST   /api/purchase-sessions/:session_code/cancel
-router.post('/:session_code/cancel', cancelSession);
+// [DELETE] 매장 상품 삭제
+router.delete('/:id', storeProductController.deleteStoreProduct);
 
 module.exports = router;

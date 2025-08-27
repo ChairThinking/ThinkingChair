@@ -17,7 +17,7 @@ function ProductListPage() {
 
   // 상품 목록 가져오기
   useEffect(() => {
-    axios.get("http://localhost:4000/api/products")
+    axios.get("/api/products")
       .then(res => {
         setProducts(res.data.map(p => ({
           id: p.id,
@@ -61,7 +61,7 @@ function ProductListPage() {
     });
 
     try {
-      const response = await axios.post("http://localhost:4000/api/store-products", {
+      const response = await axios.post("/api/store-products", {
         product_id: selectedProduct.id,
         sale_price: Number(inputPrice),
         quantity: Number(inputQuantity)

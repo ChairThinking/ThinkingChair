@@ -44,12 +44,12 @@ function SalesPage() {
 
     try {
       // 테이블용 상세 목록
-      const salesRes = await axios.get("http://localhost:4000/api/purchases", {
+      const salesRes = await axios.get("/api/purchases", {
         params: { from: fromDate, to: toDate },
       });
 
       // 그래프용 날짜별 합계 (빈 날짜도 0으로 반환)
-      const graphRes = await axios.get("http://localhost:4000/api/purchases/weekly", {
+      const graphRes = await axios.get("/api/purchases/weekly", {
         params: { from: fromDate, to: toDate },
       });
 
@@ -99,16 +99,16 @@ function SalesPage() {
 
   useEffect(() => {
     axios
-      .get("http://localhost:4000/api/purchases/summary")
+      .get("/api/purchases/summary")
       .then((res) => setSummaryData(res.data));
 
     // 최근 7일 (서버에서 기본값 처리)
     axios
-      .get("http://localhost:4000/api/purchases/weekly")
+      .get("/api/purchases/weekly")
       .then((res) => setWeeklyData(res.data || []));
 
     axios
-      .get("http://localhost:4000/api/purchases/categories")
+      .get("/api/purchases/categories")
       .then((res) => {
         const parsed = (res.data || []).map((item) => ({
           ...item,
