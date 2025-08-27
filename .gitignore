@@ -29,3 +29,5 @@ admin-dashboard.bak/
 *.swp
 
 .env.local.backup
+
+.env.local.backup
