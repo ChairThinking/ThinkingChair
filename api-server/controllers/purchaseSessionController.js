@@ -1,26 +1,8 @@
 // controllers/purchaseSessionController.js
-const db = require('../models/db');
 
-// ========= 설정 =========
-// 환경변수로 바꾸고 싶으면 .env에 STORE_ID=1 넣으세요 (기본 1)
+const db = require('../models/db');
 const STORE_ID = Number(process.env.STORE_ID || 1);
 
-// ========= 유틸 =========
-function pad2(n) { return String(n).padStart(2, '0'); }
-function ts14(d = new Date()) {
-  return (
-    d.getFullYear().toString() +
-    pad2(d.getMonth() + 1) +
-    pad2(d.getDate()) +
-    pad2(d.getHours()) +
-    pad2(d.getMinutes()) +
-    pad2(d.getSeconds())
-  );
-}
-function rand4() { return Math.random().toString(36).slice(2, 6).toUpperCase(); }
-function makeSessionCode(kioskId = 'KIOSK') { return `${kioskId}-${ts14()}-${rand4()}`; }
-
-// ========= 공통 헬퍼 =========
 function ensureJsonBody(req, res) {
   const ct = req.headers['content-type'] || '';
   const isJson = ct.includes('application/json') || ct.includes('+json');
@@ -35,80 +17,18 @@ function ensureJsonBody(req, res) {
   return null;
 }
 
-// 현재 DB에서 특정 테이블의 컬럼 목록 조회
-async function tableColumns(table) {
-  const [rows] = await db.query(
-    `SELECT COLUMN_NAME
-       FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = ?`,
-    [table]
-  );
-  return new Set(rows.map(r => r.COLUMN_NAME));
-}
-
-// ========= 컨트롤러 =========
-
-/**
- * POST /api/purchase-sessions
- * Body: { kiosk_id: "KIOSK-01" }
- * -> purchase_sessions에 INSERT 후 session_code 반환
- */
-async function createSession(req, res, next) {
-  const errResp = ensureJsonBody(req, res);
-  if (errResp) return;
-
-  const { kiosk_id } = req.body || {};
-  const fallbackKiosk = kiosk_id || 'KIOSK';
-
-  let cols;
-  try { cols = await tableColumns('purchase_sessions'); }
-  catch (e) { return next(e); }
-
-  const session_code = makeSessionCode(fallbackKiosk);
-
-  const conn = await db.getConnection();
-  try {
-    await conn.beginTransaction();
-
-    // 항상 store_id를 명시적으로 넣는다 (분기 모두 포함)
-    if (cols.has('kiosk_id')) {
-      // kiosk_id 컬럼이 있을 때
-      await conn.query(
-        `INSERT INTO purchase_sessions (store_id, session_code, kiosk_id, status, created_at)
-         VALUES (?, ?, ?, 'OPEN', NOW())`,
-        [STORE_ID, session_code, fallbackKiosk]
-      );
-    } else {
-      // kiosk_id 컬럼이 없을 때도 store_id는 반드시 넣는다
-      await conn.query(
-        `INSERT INTO purchase_sessions (store_id, session_code, status, created_at)
-         VALUES (?, ?, 'OPEN', NOW())`,
-        [STORE_ID, session_code]
-      );
-    }
-
-    await conn.commit();
-    res.status(201).json({ session_code, store_id: STORE_ID });
-  } catch (err) {
-    await conn.rollback();
-    next(err);
-  } finally {
-    conn.release();
-  }
-}
-
 /**
  * GET /api/purchase-sessions/:session_code
- * -> 세션 정보 + 아이템 목록
+ * -> 세션 정보 + 아이템 목록 (태그 포함)
  */
 async function getSessionByCode(req, res, next) {
   const { session_code } = req.params;
   try {
+    // ✅ card_id 대신 card_uid_hash를 선택하도록 수정
     const [[session]] = await db.query(
       `SELECT id, store_id, session_code,
               COALESCE(kiosk_id, NULL) AS kiosk_id,
-              card_id, status, created_at
+              card_uid_hash, status, created_at
          FROM purchase_sessions
         WHERE session_code = ?`,
       [session_code]
@@ -116,9 +36,17 @@ async function getSessionByCode(req, res, next) {
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
     const [items] = await db.query(
-      `SELECT id, product_id, name, price, quantity, created_at
-         FROM purchase_items
-        WHERE session_id = ? ORDER BY id ASC`,
+      `SELECT
+         pi.id, pi.quantity, pi.unit_price, pi.created_at,
+         p.name AS product_name, p.id AS product_id,
+         GROUP_CONCAT(t.uid) AS product_tags
+       FROM purchase_items AS pi
+       JOIN store_products AS sp ON pi.product_id = sp.id
+       JOIN products AS p ON sp.product_id = p.id
+       LEFT JOIN tags AS t ON p.id = t.id
+       WHERE pi.session_id = ?
+       GROUP BY pi.id
+       ORDER BY pi.id ASC`,
       [session.id]
     );
 
@@ -207,30 +135,6 @@ async function removeItem(req, res, next) {
 }
 
 /**
- * PATCH /api/purchase-sessions/:session_code/bind-card
- * Body: { card_id }
- */
-async function bindCard(req, res, next) {
-  const errResp = ensureJsonBody(req, res);
-  if (errResp) return;
-
-  const { session_code } = req.params;
-  const { card_id } = req.body || {};
-  if (!card_id) return res.status(400).json({ error: 'card_id is required' });
-
-  try {
-    const [result] = await db.query(
-      `UPDATE purchase_sessions SET card_id = ? WHERE session_code = ?`,
-      [card_id, session_code]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ error: 'Session not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
  * POST /api/purchase-sessions/:session_code/checkout
  * Body: { approve: true }
  */
@@ -246,8 +150,9 @@ async function checkout(req, res, next) {
   try {
     await conn.beginTransaction();
 
+    // ✅ card_id 대신 card_uid_hash를 선택하도록 수정
     const [[session]] = await conn.query(
-      `SELECT id, card_id, status FROM purchase_sessions WHERE session_code = ? FOR UPDATE`,
+      `SELECT id, card_uid_hash, status FROM purchase_sessions WHERE session_code = ? FOR UPDATE`,
       [session_code]
     );
     if (!session) { await conn.rollback(); return res.status(404).json({ error: 'Session not found' }); }
@@ -259,10 +164,11 @@ async function checkout(req, res, next) {
     );
     const total_price = items.reduce((sum, it) => sum + Number(it.price) * Number(it.quantity), 0);
 
+    // ✅ card_id 대신 card_uid_hash를 사용하도록 수정
     const [purchaseResult] = await conn.query(
       `INSERT INTO purchases (session_id, card_id, total_price, purchased_at)
        VALUES (?, ?, ?, NOW())`,
-      [session.id, session.card_id || null, total_price]
+      [session.id, session.card_uid_hash || null, total_price]
     );
 
     await conn.query(`UPDATE purchase_sessions SET status = 'CLOSED' WHERE id = ?`, [session.id]);
@@ -308,11 +214,9 @@ async function cancelSession(req, res, next) {
 }
 
 module.exports = {
-  createSession,
   getSessionByCode,
   addItem,
   removeItem,
-  bindCard,
   checkout,
   cancelSession,
 };
