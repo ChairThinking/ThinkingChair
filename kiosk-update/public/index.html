@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1200, height=1920" />
+    <title>띵킹마트 키오스크</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body> 
+    <div class="container">
+      <!-- 첫 번째: 초기화면 -->
+      <section id="screen-start" class="screen active">
+        <header class="header">
+          <h1><span class="green">띵킹</span>마트</h1>
+        </header>
+        <main class="main-content">
+          <h2 class="title">무인 셀프 계산</h2>
+          <button class="start-btn">시작하기</button>
+        </main>
+      </section>
+
+      <!-- 두 번째: 올려주세요 화면 -->
+      <section id="screen-basket" class="screen">
+        <header class="header">
+          <h1><span class="green">띵킹</span>마트</h1>
+        </header>
+        <main class="main-content">
+          <h2 class="title basket-title">
+            계산대 옆 표시된 곳에<br />상품을 올려주세요
+          </h2>
+          <img src="assets/basket.png" alt="장바구니" class="basket-img" />
+        </main>
+      </section>
+
+      <!-- 세 번째: 스캔 중 화면 -->
+      <section id="screen-scan" class="screen">
+        <header class="header">
+          <h1><span class="green">띵킹</span>마트</h1>
+        </header>
+        <main class="main-content scan-content">
+          <h2 class="title">스캔중...</h2>
+          <h3 class="subtitle">잠시만 기다려주세요</h3>
+
+          <div class="loader-circle">
+            <span></span><span></span><span></span><span></span> <span></span
+            ><span></span><span></span><span></span>
+          </div>
+          <button button id="simulate-scan-btn" class="simulate-scan-btn">
+            상품 인식 시뮬레이션
+          </button>
+        </main>
+      </section>
+
+      <!-- 네 번째: RFID 태깅 대기 화면 -->
+      <section id="screen-card" class="screen">
+        <header class="header">
+          <h1><span class="green">띵킹</span>마트</h1>
+        </header>
+        <main class="main-content">
+          <h2 class="title">카드를 태그해주세요</h2>
+          <img src="assets/rfid_circle_flat.png" alt="RFID 이미지" class="card-img" />
+        </main>
+      </section>
+
+
+      <!-- 다섯 번째: 영수증 출력 화면 -->
+      <section id="screen-receipt" class="screen">
+        <header class="header">
+          <h1><span class="green">띵킹</span>마트</h1>
+        </header>
+        <main class="main-content">
+          <h2 class="title">영수증 출력중...</h2>
+          <img
+            src="assets/receipt.png"
+            alt="영수증 이미지"
+            class="receipt-img"
+          />
+        </main>
+      </section>
+      <!-- 여섯 번째: 종료 인사 화면 -->
+      <section id="screen-goodbye" class="screen">
+        <header class="header">
+          <h1><span class="green">띵킹</span>마트</h1>
+        </header>
+        <main class="main-content">
+          <h2 class="title">안녕히가세요</h2>
+          <img
+            src="assets/greeting.png"
+            alt="인사 이미지"
+            class="greeting-img"
+          />
+        </main>
+      </section>
+    </div>
+
+  <!-- 카메라 입력 & 분석용 숨김 요소 --> 
+   <video id="cam" autoplay playsinline muted style="display:none;"></video>
+   <canvas id="frameCanvas" width="160" height="120" style="display:none;"></canvas>
+   <canvas id="prevCanvas"  width="160" height="120" style="display:none;"></canvas>
+   <script src="./app.js"></script>
+
+  </body>
+</html>

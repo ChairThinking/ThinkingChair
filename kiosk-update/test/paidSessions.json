@@ -1,0 +1,50 @@
+[
+  {
+    "sessionId": "92e533ac-78d9-46d0-bbe6-5fdebd7edc44",
+    "amount": 100000,
+    "method": "card",
+    "entryTime": "2025-06-12T08:44:27.217Z"
+  },
+  {
+    "sessionId": "61b815a5-4869-4440-969f-bae194f8893b",
+    "amount": 100000,
+    "method": "card",
+    "entryTime": "2025-06-12T08:58:04.641Z"
+  },
+  {
+    "sessionId": "10a1a7e5-6219-4a13-8eb3-b3b6f7a39960",
+    "amount": 100000,
+    "method": "card",
+    "entryTime": "2025-06-12T09:42:14.118Z"
+  },
+  {
+    "sessionId": "ff800385-c2c0-4683-bee8-5c8010dda082",
+    "amount": 100000,
+    "method": "card",
+    "entryTime": "2025-06-12T09:42:31.170Z"
+  },
+  {
+    "sessionId": "5c608b17-1d6f-4976-baae-b5be3cd55dc9",
+    "amount": 100000,
+    "method": "card",
+    "entryTime": "2025-06-12T09:42:42.770Z"
+  },
+  {
+    "sessionId": "c8b907bf-1504-4882-b7d0-5c003477dd5a",
+    "amount": 100000,
+    "method": "card",
+    "entryTime": "2025-06-12T09:43:00.405Z"
+  },
+  {
+    "sessionId": "8bd6cf27-8dbe-4381-8085-59aa494a70df",
+    "amount": 100000,
+    "method": "card",
+    "entryTime": "2025-06-12T09:55:15.174Z"
+  },
+  {
+    "sessionId": "8086c0f6-c5c7-452a-a677-572b9726f374",
+    "amount": 100000,
+    "method": "card",
+    "entryTime": "2025-07-01T12:34:37.663Z"
+  }
+]

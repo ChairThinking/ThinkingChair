@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>세션 시작 테스트</title>
+  </head>
+  <body>
+    <h1>세션 시작</h1>
+    <button id="enter-btn" onclick="startSession()">입장</button>
+
+    <script>
+      let isProcessing = false;
+
+      function startSession() {
+        if (isProcessing) return;
+        isProcessing = true;
+        const btn = document.getElementById("enter-btn");
+        btn.disabled = true;
+
+        fetch("/api/session/start", { method: "POST" })
+          .then((res) => {
+            if (!res.ok) throw new Error("세션 생성 실패");
+            return res.json();
+          })
+          .then((data) => {
+            console.log("세션 시작됨:", data);
+            const url = `/index.html?sessionId=${data.sessionId}&expireTime=${data.expireTime}`;
+            window.location.href = url;
+          })
+          .catch((err) => {
+            console.error("에러 발생:", err);
+            alert("세션 시작 중 오류 발생");
+            isProcessing = false;
+            btn.disabled = false;
+          });
+      }
+    </script>
+  </body>
+</html>
