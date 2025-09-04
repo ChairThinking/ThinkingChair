@@ -45,6 +45,22 @@ const purchaseSessionRoutes = require('./routes/purchaseSessionRoutes');
 /* -------------------- 헬스체크 -------------------- */
 app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
 
+/* ----------- 타임존/시계 디버그(선택) ------------- */
+const db = require('./models/db');
+app.get('/api/timezonedebug', async (_req, res) => {
+  try {
+    const [[row]] = await db.query(`
+      SELECT
+        NOW() AS now_session,
+        UTC_TIMESTAMP() AS utc_now,
+        CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+09:00') AS kst_now
+    `);
+    res.json(row);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 /* -------------------- API 라우팅 -------------------- */
 app.use('/api/products',          productRoutes);
 app.use('/api/store-products',    storeProductRoutes);
@@ -54,7 +70,7 @@ app.use('/api/purchases',         purchaseRoutes);
 app.use('/api/refunds',           refundRoutes);
 app.use('/api/dashboard',         dashboardRoutes);
 app.use('/api/card-info',         cardInfoRoutes);
-app.use('/api/dummy-sales',       dummySalesRoutes);       // ← 여기로 POST /generate
+app.use('/api/dummy-sales',       dummySalesRoutes);       // ← POST /generate
 app.use('/api/purchase-sessions', purchaseSessionRoutes);
 
 /* -------------------- 라우트 목록 로그 -------------------- */
@@ -65,7 +81,6 @@ function printRoutes(app) {
       const methods = Object.keys(m.route.methods).join(',').toUpperCase();
       out.push(`${methods.padEnd(6)} ${m.route.path}`);
     } else if (m.name === 'router' && m.handle?.stack) {
-      // 마운트 경로 표시
       const mount = m.regexp && m.regexp.fast_slash ? '' : (m.regexp?.toString() || '');
       m.handle.stack.forEach((h) => {
         if (h.route) {

@@ -1,4 +1,3 @@
-// src/pages/SalesPage.js
 import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import Sidebar from "../components/Sidebar";
@@ -36,6 +35,18 @@ function SalesPage() {
     setToDate(format(today));
   };
 
+  // 🛠 응답 표준화: 백엔드 {items:[...]} → 화면에서 쓰는 필드로 맞춤
+  const normalizeSalesItems = (raw) =>
+    (raw || []).map((r) => ({
+      id: r.id,
+      date: r.date || r.purchased_at_kst || r.purchased_at, // 서버 버전에 따라
+      name: r.name || r.product_name,
+      barcode: r.barcode,
+      quantity: Number(r.quantity ?? 0),
+      total_price: Number(r.total_price ?? 0),
+      method: r.method || r.payment_method || "",
+    }));
+
   const handleSearch = async () => {
     if (!fromDate || !toDate) {
       alert("날짜를 선택해주세요.");
@@ -47,17 +58,21 @@ function SalesPage() {
       const salesRes = await axios.get("/api/purchases", {
         params: { from: fromDate, to: toDate },
       });
+      // 백엔드는 { items: [...] } 형태로 응답
+      const items = Array.isArray(salesRes.data)
+        ? salesRes.data
+        : (salesRes.data?.items ?? []);
+      setSalesData(normalizeSalesItems(items));
 
-      // 그래프용 날짜별 합계 (빈 날짜도 0으로 반환)
+      // 그래프용 날짜별 합계
       const graphRes = await axios.get("/api/purchases/weekly", {
         params: { from: fromDate, to: toDate },
       });
-
-      setSalesData(salesRes.data || []);
       setWeeklyData(graphRes.data || []);
+
       setCurrentPage(1); // ✅ 검색하면 1페이지로 리셋
 
-      if ((salesRes.data || []).length === 0) {
+      if ((items || []).length === 0) {
         console.info("선택 기간에 상세 매출 기록이 없습니다.");
       }
     } catch (err) {
@@ -67,7 +82,7 @@ function SalesPage() {
   };
 
   const formatDate = (isoDate) =>
-    new Date(isoDate).toLocaleDateString("ko-KR");
+    isoDate ? new Date(isoDate).toLocaleDateString("ko-KR") : "";
   const formatKRW = (v) => `${Number(v || 0).toLocaleString("ko-KR")} 원`;
 
   const renderCustomizedLabel = ({
@@ -98,24 +113,18 @@ function SalesPage() {
   };
 
   useEffect(() => {
-    axios
-      .get("/api/purchases/summary")
-      .then((res) => setSummaryData(res.data));
+    axios.get("/api/purchases/summary").then((res) => setSummaryData(res.data));
 
     // 최근 7일 (서버에서 기본값 처리)
-    axios
-      .get("/api/purchases/weekly")
-      .then((res) => setWeeklyData(res.data || []));
+    axios.get("/api/purchases/weekly").then((res) => setWeeklyData(res.data || []));
 
-    axios
-      .get("/api/purchases/categories")
-      .then((res) => {
-        const parsed = (res.data || []).map((item) => ({
-          ...item,
-          total: Number(item.total),
-        }));
-        setCategoryData(parsed);
-      });
+    axios.get("/api/purchases/categories").then((res) => {
+      const parsed = (res.data || []).map((item) => ({
+        ...item,
+        total: Number(item.total),
+      }));
+      setCategoryData(parsed);
+    });
   }, []);
 
   // ✅ 그래프 가독성: 최대값/평균 계산 + Y축 상단 버퍼(+20%)
@@ -125,7 +134,6 @@ function SalesPage() {
     const sum = totals.reduce((a, b) => a + b, 0);
     const avg = totals.length ? sum / totals.length : 0;
 
-    // 상단 여유: 최대값의 1.2배, 천단위 올림 (최소 10,000)
     const buffered =
       max === 0 ? 10000 : Math.max(1000, Math.ceil((max * 1.2) / 1000) * 1000);
 
@@ -197,7 +205,6 @@ function SalesPage() {
     const left = Math.max(1, currentPage - neighbors);
     const right = Math.min(totalPages, currentPage + neighbors);
 
-    // 처음
     if (left > 1) pages.push(1);
     if (left > 2) pages.push("left-ellipsis");
 
