@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 
 const AIDummyDataGenerator = () => {
-  // 💡 입력은 문자열로 관리(숫자만, 선행 0 제거). 표시/동작 모두 자연스럽게.
+  // 💡 입력은 문자열로 관리(숫자만, 선행 0 제거)
   const [salesTargetStr, setSalesTargetStr] = useState("100"); // "100"(만원) → 1,000,000원
   const [datePeriod, setDatePeriod] = useState(1);             // 1/3/5/7 개월
+  const [uidsText, setUidsText] = useState("04032FDC300289, 04B36A33300289"); // 옵션: UID 목록
   const [isGenerating, setIsGenerating] = useState(false);
 
   const toCSV = (rows) => {
@@ -37,9 +38,17 @@ const AIDummyDataGenerator = () => {
         throw new Error("월 매출 목표(만원)와 기간(1/3/5/7개월)을 올바르게 입력하세요.");
       }
 
+      // 옵션: UID 목록을 서버에 전달(없으면 서버가 자동 생성)
+      const uids = uidsText
+        .split(/[,\s]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+
       const body = {
         monthlyGoalIn10kWon,
         durationMonths: Number(datePeriod),
+        // saveToDb: true, // 서버에서 기본 true. 필요하면 명시
+        ...(uids.length > 0 ? { uids } : {}),
       };
 
       const res = await fetch("/api/dummy-sales/generate", {
@@ -55,11 +64,11 @@ const AIDummyDataGenerator = () => {
 
       const result = await res.json();
 
-      // purchases(데이터) → CSV
-      const purchasesCsvRows = result.purchases.map(row => ({
+      // ⬇️ CSV 컬럼 교체: card_id → card_uid_hash_hex
+      const purchasesCsvRows = (result.purchases || []).map(row => ({
         purchased_at: row.purchased_at,              // 첫 번째 열
         store_product_id: row.store_product_id,
-        card_id: row.card_id,
+        card_uid_hash: row.card_uid_hash || "", // 64-hex 문자열
         quantity: row.quantity,
         unit_price: row.unit_price,
         total_price: row.total_price,
@@ -88,19 +97,16 @@ const AIDummyDataGenerator = () => {
   };
 
   return (
-    <div className="bg-white p-4 rounded shadow">
-      <div className="flex flex-wrap gap-4 mb-4">
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <div className="flex flex-wrap gap-4">
         <div>
           <label className="block mb-1">📈 월 매출 목표 (만원)</label>
           <input
-            // ⬇️ number → text 로 변경, 모바일 숫자 키패드 유지
             type="text"
             inputMode="numeric"
             value={salesTargetStr}
             onChange={(e) => {
-              // 숫자만 허용
               let v = e.target.value.replace(/\D/g, "");
-              // 선행 0 제거(빈값은 그대로 허용)
               if (v !== "") v = v.replace(/^0+/, "");
               setSalesTargetStr(v);
             }}
@@ -108,6 +114,7 @@ const AIDummyDataGenerator = () => {
             className="p-2 rounded border"
           />
         </div>
+
         <div>
           <label className="block mb-1">📅 데이터 기간 (개월)</label>
           <select
@@ -121,6 +128,17 @@ const AIDummyDataGenerator = () => {
             <option value={7}>7개월</option>
           </select>
         </div>
+      </div>
+
+      <div>
+        <label className="block mb-1">🔐 UID 목록 (쉼표/공백 구분, 미입력 시 서버가 자동 생성)</label>
+        <textarea
+          className="w-full p-2 rounded border"
+          rows={3}
+          value={uidsText}
+          onChange={(e) => setUidsText(e.target.value)}
+          placeholder="예) 04032FDC300289, 04B36A33300289"
+        />
       </div>
 
       <button

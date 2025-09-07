@@ -1,8 +1,9 @@
 // server/controllers/dummySalesController.js
-// ─────────────────────────────────────────────────────────────
 // CSV처럼 생성된 모든 거래를 MySQL에 100% 저장하도록 강화한 버전
+// 변경점: card_id 제거, UID → SHA-256 → BINARY(32) 저장(card_uid_hash)
 
 const pool = require('../models/db');
+const crypto = require('crypto');
 
 // ───────── helpers
 const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
@@ -30,6 +31,24 @@ const randomTimeOn = (date) => {
   const s = rnd(0, 59);
   return iso(new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m, s));
 };
+
+// UID → sha256 hex(64)
+const sha256Hex = (uid) => crypto.createHash('sha256').update(String(uid), 'utf8').digest('hex');
+
+// 요청 본문에서 들어온 UID 배열 사용, 없으면 더미 UID 생성
+function getUidListFromBody(body, fallbackCount = 10) {
+  const arr = Array.isArray(body?.uids) ? body.uids.filter(Boolean) : [];
+  if (arr.length > 0) return arr.map(String);
+  // fallback 더미 UID (MIFARE 느낌으로 '04' 시작, 14~16 hex)
+  const gen = [];
+  for (let i = 0; i < fallbackCount; i++) {
+    const len = 14; // 7바이트 표현
+    let hex = '04';
+    while (hex.length < len) hex += Math.floor(Math.random() * 16).toString(16);
+    gen.push(hex.toUpperCase());
+  }
+  return gen;
+}
 
 // ───────── schema helpers
 async function getPriceSource(conn) {
@@ -59,11 +78,6 @@ async function loadPricedStoreProducts(conn, storeId) {
     [storeId]
   );
   return rows;
-}
-
-async function loadCardIds(conn) {
-  const [rows] = await conn.query(`SELECT id FROM card_info`);
-  return rows.map(r => r.id);
 }
 
 // ───────── cart / generation
@@ -96,7 +110,8 @@ function flattenRows(trans, storeId) {
     for (const it of t.items) {
       rows.push({
         store_product_id: it.store_product_id,
-        card_id: t.card_id,
+        // card_uid_hash는 DB에서 UNHEX(sha256-hex)로 저장할 것이므로 hex로 들고간다
+        card_uid_hash: t.uid_hash_hex,
         quantity: it.quantity,
         unit_price: it.unit_price,
         total_price: it.unit_price * it.quantity,
@@ -109,29 +124,67 @@ function flattenRows(trans, storeId) {
   return rows;
 }
 
+// 컬럼 존재 여부 체크(created_at 유무에 따라 INSERT 구성)
+async function hasColumn(conn, table, column) {
+  const [rows] = await conn.query(
+    `SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?`,
+    [table, column]
+  );
+  return rows.length > 0;
+}
+
+// ───────── insertBatch: 컬럼 수와 ? 수를 정확히 맞춤
 async function insertBatch(conn, rows, chunkSize = 500) {
   let total = 0;
+  const hasCreatedAt = await hasColumn(conn, 'purchases', 'created_at');
+
   for (let i = 0; i < rows.length; i += chunkSize) {
     const part = rows.slice(i, i + chunkSize);
-    const values = part.map(() => '(?,?,?,?,?,?,?,?)').join(',');
+
+    // 컬럼 목록
+    // 공통 8개: store_product_id, card_uid_hash, quantity, unit_price, total_price,
+    //           payment_method, purchased_at, store_id
+    // + created_at(있으면 1개 추가) => 총 9개
+    const placeholders = part.map(() => hasCreatedAt
+      ? // 9개의 파라미터 (UNHEX(?) 포함)
+        '(?,UNHEX(?),?,?,?,?,?,?,?)'
+      : // 8개의 파라미터 (UNHEX(?) 포함)
+        '(?,UNHEX(?),?,?,?,?,?,?)'
+    ).join(',');
+
+    // 파라미터 적재 순서: 반드시 컬럼 순서와 일치!
     const params = [];
     part.forEach(r => {
+      // 1~8
       params.push(
-        r.store_product_id,
-        r.card_id,
-        r.quantity,
-        r.unit_price,
-        r.total_price,
-        r.payment_method,
-        r.purchased_at,
-        r.store_id
+        r.store_product_id,     // 1
+        r.card_uid_hash,    // 2 (UNHEX로 변환될 64-hex 문자열)
+        r.quantity,             // 3
+        r.unit_price,           // 4
+        r.total_price,          // 5
+        r.payment_method,       // 6
+        r.purchased_at,         // 7
+        r.store_id              // 8
       );
+      // 9 (옵션)
+      if (hasCreatedAt) params.push(r.purchased_at); // created_at = purchased_at
     });
-    const sql = `
-      INSERT INTO purchases
-      (store_product_id, card_id, quantity, unit_price, total_price, payment_method, purchased_at, store_id)
-      VALUES ${values}
-    `;
+
+    const sql = hasCreatedAt
+      ? `
+        INSERT INTO purchases
+          (store_product_id, card_uid_hash, quantity, unit_price, total_price,
+           payment_method, purchased_at, store_id, created_at)
+        VALUES ${placeholders}
+      `
+      : `
+        INSERT INTO purchases
+          (store_product_id, card_uid_hash, quantity, unit_price, total_price,
+           payment_method, purchased_at, store_id)
+        VALUES ${placeholders}
+      `;
+
     const [ret] = await conn.query(sql, params);
     total += ret.affectedRows || 0;
   }
@@ -164,12 +217,13 @@ exports.generateDummySales = async (req, res) => {
   try {
     conn = await pool.getConnection();
 
-    const [products, cardIds] = await Promise.all([
-      loadPricedStoreProducts(conn, storeId),
-      loadCardIds(conn)
+    const [products] = await Promise.all([
+      loadPricedStoreProducts(conn, storeId)
     ]);
     if (!products.length) return res.status(400).json({ error: '판매 가능한 상품(가격>0)이 없습니다.' });
-    if (!cardIds.length)   return res.status(400).json({ error: 'card_info 테이블에 카드가 없습니다.' });
+
+    // 🔁 card_info 의존 제거 → 요청 본문 uids 사용(없으면 자동 생성)
+    const uidList = getUidListFromBody(req.body, 20);
 
     const now = new Date();
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -182,6 +236,8 @@ exports.generateDummySales = async (req, res) => {
     const monthlySummary = {};
     const allRows = [];
     const dbReport = [];
+
+    let uidIdx = 0;
 
     for (const w of windows) {
       const days = daysBetween(w.start, w.end);
@@ -198,8 +254,12 @@ exports.generateDummySales = async (req, res) => {
           const day = sampleDayWeighted(days);
           const cart = buildCart(products);
           const purchased_at = randomTimeOn(day);
-          const card_id = cardIds[rnd(0, cardIds.length-1)];
-          txs.push({ items: cart.items, total: cart.total, purchased_at, card_id });
+
+          // UID 선택 → sha256 hex 준비
+          const uid = uidList[uidIdx % uidList.length]; uidIdx++;
+          const uid_hash_hex = sha256Hex(uid);
+
+          txs.push({ items: cart.items, total: cart.total, purchased_at, uid_hash_hex });
           sum += cart.total;
         }
         if (sum < minGoal) estTx = Math.ceil(estTx * 1.1);
