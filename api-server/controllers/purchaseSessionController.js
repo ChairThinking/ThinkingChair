@@ -87,7 +87,7 @@ async function createSession(req,res,next){
   finally{ conn.release(); }
 }
 
-// 2) 세션 조회
+// 2) 세션 조회 (상세)
 async function getSessionByCode(req,res,next){
   const { session_code } = req.params;
   try{
@@ -125,6 +125,44 @@ async function getSessionByCode(req,res,next){
       total_estimated
     });
   } catch(e){ next(e); }
+}
+
+// 2-1) (신규) 열린 세션 최신 1건 조회: ESP8266 폴링용
+// GET /api/purchase-sessions/open-latest?kiosk_id=KIOSK-01
+async function getOpenLatest(req, res, next) {
+  const kioskId = (req.query.kiosk_id || '').trim();
+  try {
+    // OPEN_STATES → (?, ?, ?) 자리표시자 만들기
+    const openArr = Array.from(OPEN_STATES);
+    const placeholders = openArr.map(() => '?').join(', ');
+    let sql =
+      `SELECT session_code, status, created_at
+         FROM purchase_sessions
+        WHERE store_id = ?
+          AND status IN (${placeholders})`;
+    const params = [STORE_ID, ...openArr];
+
+    if (kioskId) {
+      sql += ` AND session_code LIKE ?`;
+      params.push(`${kioskId}-%`);
+    }
+
+    sql += ` ORDER BY created_at DESC LIMIT 1`;
+
+    const [rows] = await db.query(sql, params);
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ message: 'NO_OPEN_SESSION' });
+    }
+
+    const row = rows[0];
+    return res.json({
+      session_code: row.session_code,
+      status: row.status,
+      created_at: row.created_at,
+    });
+  } catch (e) {
+    next(e);
+  }
 }
 
 // 3) 아이템 추가
@@ -423,11 +461,12 @@ async function cancelSession(req,res,next){
 module.exports = {
   createSession,
   getSessionByCode,
+  getOpenLatest,      // ✅ 추가: 열린 세션 최신 1건
   addItem,
   removeItem,
-  bindCardUid,       // 수동/디버그용
-  bindCardTagsOnly,  // 윈도우 바인딩(디버그용)
-  bindCardEvent,     // ✅ 권장: 세션코드 기반 즉시 바인딩
+  bindCardUid,        // 수동/디버그용
+  bindCardTagsOnly,   // 윈도우 바인딩(디버그용)
+  bindCardEvent,      // ✅ 권장: 세션코드 기반 즉시 바인딩
   checkout,
   cancelSession,
 };
