@@ -1,11 +1,12 @@
 // controllers/purchaseSessionController.js
 const db = require('../models/db');
 const crypto = require('crypto');
+const wsHub = require('../sockets/wsHub');
 
 const STORE_ID = Number(process.env.STORE_ID || 1);
 
 // "열림" 상태 집합 (이 중 하나면 장바구니 작업 허용)
-const OPEN_STATES = new Set(['SCANNING', 'READY', 'OPEN']);
+const OPEN_STATES = new Set(['OPEN', 'CARD_BOUND']);
 
 // ───────── 유틸 ─────────
 function pad2(n){ return String(n).padStart(2,'0'); }
@@ -54,6 +55,24 @@ async function getRecentHashFromTags(windowSec = 60){
   return row?.h || null; // Buffer 또는 null
 }
 
+// 합계 재계산: purchase_items → 합계 → purchase_sessions.total_price 반영
+async function recomputeTotal(conn, sessionId) {
+  const [[row]] = await conn.query(
+    `SELECT COALESCE(SUM(quantity * unit_price), 0) AS total
+       FROM purchase_items
+      WHERE session_id = ?`,
+    [sessionId]
+  );
+  const total = Number(row?.total || 0);
+  await conn.query(
+    `UPDATE purchase_sessions
+        SET total_price = ?, updated_at = NOW()
+      WHERE id = ?`,
+    [total, sessionId]
+  );
+  return total;
+}
+
 // ───────── 컨트롤러 ─────────
 
 // 1) 세션 생성: status 명시적으로 'SCANNING'
@@ -66,8 +85,9 @@ async function createSession(req,res,next){
   try{
     await conn.beginTransaction();
     const [ins] = await conn.execute(
-      `INSERT INTO purchase_sessions (store_id, session_code, status, created_at, updated_at)
-       VALUES (?, ?, 'SCANNING', NOW(), NOW())`,
+      `INSERT INTO purchase_sessions
+        (store_id, session_code, status, total_price, created_at, updated_at)
+        VALUES (?, ?, 'OPEN', 0, NOW(), NOW())`,
       [STORE_ID, session_code]
     );
     const [[row]] = await conn.query(
@@ -132,24 +152,25 @@ async function getSessionByCode(req,res,next){
 async function getOpenLatest(req, res, next) {
   const kioskId = (req.query.kiosk_id || '').trim();
   try {
-    // OPEN_STATES → (?, ?, ?) 자리표시자 만들기
-    const openArr = Array.from(OPEN_STATES);
-    const placeholders = openArr.map(() => '?').join(', ');
-    let sql =
-      `SELECT session_code, status, created_at
-         FROM purchase_sessions
-        WHERE store_id = ?
-          AND status IN (${placeholders})`;
-    const params = [STORE_ID, ...openArr];
+    // 실제 열림 상태는 OPEN 만 사용
+    let sql = `
+      SELECT session_code, status, created_at, total_price
+        FROM purchase_sessions
+       WHERE store_id = ?
+         AND status = 'OPEN'
+    `;
+    const params = [STORE_ID];
 
     if (kioskId) {
       sql += ` AND session_code LIKE ?`;
       params.push(`${kioskId}-%`);
     }
 
+    // 최신 세션 1건만
     sql += ` ORDER BY created_at DESC LIMIT 1`;
 
     const [rows] = await db.query(sql, params);
+
     if (!rows || rows.length === 0) {
       return res.status(404).json({ message: 'NO_OPEN_SESSION' });
     }
@@ -198,16 +219,31 @@ async function addItem(req,res,next){
       if (!(unit_price>=0)){ await conn.rollback(); return res.status(400).json({error:'invalid unit_price'}); }
     }
 
+    // ⬇️ 핵심 변경: 동일 (session_id, store_product_id) 존재 시 수량만 증가
     await conn.query(
       `INSERT INTO purchase_items (session_id, store_product_id, quantity, unit_price)
-       VALUES (?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         quantity = quantity + VALUES(quantity)`,
       [sess.id, spid, qty, unit_price]
     );
 
+    // 합계 재계산 + 세션에 반영
+    const total = await recomputeTotal(conn, sess.id);
+
     await conn.commit();
-    res.status(201).json({ok:true});
-  } catch(e){ try{await conn.rollback();}catch{} next(e); }
-  finally{ conn.release(); }
+    res.status(201).json({ ok: true, total_price: total });
+
+  } catch (e) {
+    try { await conn.rollback(); } catch {}
+    if (res.headersSent) {
+      console.error('[addItem] error after response:', e);
+      return; // 이미 응답 보냈으면 끝
+    }
+    return next(e);
+  } finally {
+    conn.release();
+  }
 }
 
 // 4) 아이템 삭제
@@ -230,6 +266,12 @@ async function removeItem(req,res,next){
       `DELETE FROM purchase_items WHERE id=? AND session_id=?`,
       [item_id, sess.id]
     );
+
+    const total = await recomputeTotal(conn, sess.id);
+
+    await conn.commit();
+    if (!del.affectedRows) return res.status(404).json({error:'Item not found'});
+    res.json({ ok: true, total_price: total });
 
     await conn.commit();
     if (!del.affectedRows) return res.status(404).json({error:'Item not found'});
@@ -281,24 +323,35 @@ async function bindCardTagsOnly(req,res,next){
 }
 
 // 7) (권장) 이벤트 기반 바인딩: 세션코드로 즉시 바인딩 + tags 기록
-async function bindCardEvent(req, res, next) {
-  const err = ensureJsonBody(req, res); if (err) return;
+// 프로젝트에 맞는 브로드캐스트 헬퍼로 연결
+function wsBroadcast(msg) {
+  try {
+    if (global.kioskBroadcast) return global.kioskBroadcast(msg);
+  } catch {}
+  try {
+    const kioskController = require('../controllers/kioskController');
+    if (kioskController?.broadcast) return kioskController.broadcast(msg);
+  } catch {}
+  try {
+    const hub = require('../sockets/wsHub');
+    if (hub?.broadcast) return hub.broadcast(msg);
+  } catch {}
+  console.log('[WS] no broadcast function found');
+}
 
+async function bindCardEvent(req, res, next) {
   const { session_code } = req.params;
   const { uid: rawUid, record_tag = true } = req.body || {};
   if (!rawUid) return res.status(400).json({ error: 'uid is required' });
 
   const uid = normalizeUid(rawUid);
-  if (!/^[0-9A-F]{6,32}$/.test(uid)) {
-    return res.status(400).json({ error: 'invalid uid format (hex 6~32)' });
-  }
   const hashBin = uidToHashBinary(uid);
+  const hashHex = Buffer.from(hashBin).toString('hex');
 
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
-    // (선택) 태그 이벤트 기록
     if (record_tag) {
       await conn.query(
         `INSERT INTO tags (card_uid_hash, timestamp) VALUES (?, NOW())`,
@@ -306,35 +359,54 @@ async function bindCardEvent(req, res, next) {
       );
     }
 
-    // 세션 잠금 & 상태 확인
     const [[sess]] = await conn.query(
       `SELECT id, status
          FROM purchase_sessions
-        WHERE session_code = ?
-        FOR UPDATE`,
+        WHERE session_code=? FOR UPDATE`,
       [session_code]
     );
-    if (!sess) { await conn.rollback(); return res.status(404).json({ error: 'Session not found' }); }
-    if (!OPEN_STATES.has(sess.status)) { await conn.rollback(); return res.status(409).json({ error: 'Session is not OPEN' }); }
+    if (!sess) {
+      await conn.rollback();
+      return res.status(404).json({ error: 'Session not found' });
+    }
 
-    // 이미 값 있으면 덮어쓰지 않음(IFNULL)
-    const [upd] = await conn.query(
+    // ★ 현재 장바구니 합계 계산 & 세션에 반영 (0일 수도 있음)
+    const total = await recomputeTotal(conn, sess.id);
+
+    // 상태를 CARD_BOUND로 변경 + 합계 동시 반영
+    await conn.query(
       `UPDATE purchase_sessions
-          SET card_uid_hash = IFNULL(card_uid_hash, ?), updated_at = NOW()
-        WHERE id = ? AND card_uid_hash IS NULL`,
-      [hashBin, sess.id]
+          SET card_uid_hash = IFNULL(card_uid_hash, ?),
+              status        = 'CARD_BOUND',
+              total_price   = ?,              -- ★ 합계 저장
+              updated_at    = NOW()
+        WHERE id = ?`,
+      [hashBin, total, sess.id]
     );
 
-    const bound = upd.affectedRows > 0;
     await conn.commit();
 
-    return res.json({
+    // 응답(합계 포함)
+    res.json({
       ok: true,
-      bound,
-      alreadyBound: !bound,
       session_code,
-      uid_hash_hex: Buffer.from(hashBin).toString('hex')
+      uid_hash_hex: hashHex,
+      new_status: 'CARD_BOUND',
+      total_price: total     // ★ 포함
     });
+
+    // WebSocket 브로드캐스트(합계 포함)
+    setImmediate(() => {
+      wsHub.broadcastToSession(session_code, {
+        type: 'SESSION_CARD_BOUND',
+        session_code,
+        uid_hash_hex: hashHex,
+        total_price: total,   // ★ 포함
+        next: 'PAYMENT_READY'
+      });
+      console.log(`[WS] SESSION_CARD_BOUND → ${session_code} total=${total}`);
+    });
+
   } catch (e) {
     try { await conn.rollback(); } catch {}
     next(e);

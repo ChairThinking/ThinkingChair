@@ -6,6 +6,10 @@ const cors = require('cors');
 const compression = require('compression');
 const helmet = require('helmet');
 // const morgan = require('morgan');
+const http = require('http');
+const WebSocket = require('ws');
+const wsHub = require('./sockets/wsHub');
+
 
 const app = express();
 
@@ -100,12 +104,42 @@ printRoutes(app);
 app.use((req, res) => {
   res.status(404).json({ error: 'Not Found', method: req.method, path: req.originalUrl });
 });
-app.use((err, req, res, _next) => {
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
   console.error('🔥 Unhandled error:', err);
   res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
 });
 
 /* -------------------- 서버 시작 -------------------- */
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Express 서버 실행 중: http://0.0.0.0:${PORT}`);
+const server = http.createServer(app);
+
+// WebSocket 서버 열기
+const wss = new WebSocket.Server({ server, path: '/ws' });
+
+// 클라이언트 구독 처리
+wss.on('connection', (ws) => {
+  ws.subscribedSession = null;
+
+  ws.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw);
+
+      // 세션코드 구독 처리
+      if (msg.type === 'SUB' && msg.session_code) {
+        ws.subscribedSession = msg.session_code;
+        ws.send(JSON.stringify({
+          type: 'SUB_OK',
+          session_code: ws.subscribedSession,
+        }));
+      }
+    } catch {}
+  });
+});
+
+// wsHub에 wss 주입
+wsHub.init(wss);
+
+// Express + WebSocket 서버 실행
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Express + WS 서버 실행 중: http://0.0.0.0:${PORT}`);
 });
