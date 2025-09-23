@@ -1,6 +1,14 @@
-let ws;
+// =======================
+// Kiosk Front (public/app.js)
+// =======================
+
+let wsLocal;  // ★★★ :3000 WS (로컬 컨트롤러/YOLO/라이다)
+let wsApi;    // ★★★ :4000/ws WS (결제/세션 브로드캐스트)
 let sessionStarted = false;
 let __currentScreenId = "screen-start";
+
+// 현재 세션코드(WS SUB용)
+let currentSessionCode = null;
 
 // 상품 목록 / 감지 결과 저장
 let storeProducts = [];
@@ -10,7 +18,7 @@ let detectedProductName = null;
 let receiptTimer = null;
 let goodbyeTimer = null;
 
-const TEST_CARD_AUTOPASS = true; // 서버 준비 전엔 true, 완성되면 false
+const TEST_CARD_AUTOPASS = false; // 서버 준비 전엔 true, 완성되면 false
 
 // ----------------------
 // 화면 전환 함수
@@ -33,21 +41,19 @@ function setupBasketImageAdvance() {
     e?.preventDefault?.();
     e?.stopPropagation?.();
 
-    // 세션이 아직이면 먼저 시작
     if (!sessionStarted) {
       console.log("▶️ 수동 진행(이미지): 세션 시작");
       startKioskFlow(); // 내부에서 sessionStarted 송신 + basket 화면 진입
     }
 
-    // 바로 스캔 화면으로
     console.log("⏭️ 수동 진행(이미지): screen-scan으로 전환");
     goToScreen("screen-scan");
     
-    // 비전 시작 신호
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: "startVision", by: "manual", ts: new Date().toISOString() }));
+    // 비전 시작 신호 → 로컬 컨트롤러에 보냄
+    if (wsLocal?.readyState === WebSocket.OPEN) {
+      wsLocal.send(JSON.stringify({ action: "startVision", by: "manual", ts: new Date().toISOString() }));
     } else {
-      console.warn("⚠️ WS 미연결 상태에서 수동 진행 실행됨");
+      console.warn("⚠️ wsLocal 미연결 상태에서 수동 진행 실행됨");
     }
   };
   
@@ -69,34 +75,14 @@ function goToScreen(screenId) {
     __currentScreenId = screenId;
 
     if (screenId === "screen-basket") onEnterScreenBasket();
-    if (screenId === "screen-scan") onEnterScreenScan();
-    if (screenId === "screen-card") onEnterScreenCard(); // 테스트용, 나중에 삭제 
+    if (screenId === "screen-scan")   onEnterScreenScan();
+    if (screenId === "screen-card")   onEnterScreenCard(); // 테스트용, 나중에 삭제 
   }
 }
 
-// 카드 태깅 자동 전환 (테스트용)
 function clearUITimers() {
   if (receiptTimer) { clearTimeout(receiptTimer); receiptTimer = null; }
   if (goodbyeTimer) { clearTimeout(goodbyeTimer); goodbyeTimer = null; }
-}
-
-// 카드 태깅 자동 전환 (테스트용)
-function scheduleAutoAdvanceFromCard() {
-  // 중복 방지
-  if (receiptTimer) clearTimeout(receiptTimer);
-  if (goodbyeTimer) clearTimeout(goodbyeTimer);
-
-  console.log("⏳ 7초 뒤 영수증 → 3초 뒤 종료 화면으로 자동 전환");
-
-  receiptTimer = setTimeout(() => {
-    goToScreen("screen-receipt");
-
-    goodbyeTimer = setTimeout(() => {
-      goToScreen("screen-goodbye");
-      resetKioskFlow(); // 세션/상태 초기화
-    }, 3000);
-
-  }, 7000);
 }
 
 // ----------------------
@@ -109,8 +95,9 @@ function startKioskFlow() {
   }
   sessionStarted = true;
 
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: "sessionStarted" }));
+  // 세션 시작 알림 → 로컬 컨트롤러에 보냄
+  if (wsLocal?.readyState === WebSocket.OPEN) {
+    wsLocal.send(JSON.stringify({ action: "sessionStarted" }));
   }
 
   goToScreen("screen-basket");
@@ -119,14 +106,12 @@ function startKioskFlow() {
 function resetKioskFlow() {
   sessionStarted = false;
 
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: "sessionEnded" }));
+  // 세션 종료 알림 → 로컬 컨트롤러에 보냄
+  if (wsLocal?.readyState === WebSocket.OPEN) {
+    wsLocal.send(JSON.stringify({ action: "sessionEnded" }));
   }
 
-  // 타이머 정리
-  if (receiptTimer) { clearTimeout(receiptTimer); receiptTimer = null; }
-  if (goodbyeTimer) { clearTimeout(goodbyeTimer); goodbyeTimer = null; }
-
+  clearUITimers();
   goToScreen("screen-start");
   sessionStorage.clear();
 }
@@ -139,24 +124,21 @@ function onEnterScreenBasket() {
 }
 
 function onEnterScreenScan() {
-  console.log("📤 startVision 전송");
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ action: "startVision" }));
+  console.log("📤 startVision 전송 (로컬)");
+  if (wsLocal?.readyState === WebSocket.OPEN) {
+    wsLocal.send(JSON.stringify({ action: "startVision" }));
   }
 }
 
-// 카드 태깅 자동 전환 핸들러 (테스트용)
 function onEnterScreenCard() {
   console.log("💳 카드 태깅 화면 진입");
   clearUITimers();
-  scheduleAutoAdvanceFromCard(); // 7초 → 3초 자동 전환
 }
 
 // ----------------------
 // 버튼 이벤트 바인딩
 // ----------------------
 function setupStartButton() {
-  // id 또는 class 둘 다 허용
   const btn = document.querySelector("#start-btn, .start-btn");
   if (!btn) {
     console.warn("⚠️ 시작 버튼을 찾을 수 없습니다. (#start-btn 또는 .start-btn)");
@@ -165,7 +147,6 @@ function setupStartButton() {
   if (btn.dataset.bound) return;
 
   btn.addEventListener("click", (e) => {
-    // 폼 안에 있으면 새로고침 막기
     e.preventDefault?.();
     e.stopPropagation?.();
     console.log("▶️ 시작 버튼 클릭 → 세션 시작");
@@ -175,18 +156,106 @@ function setupStartButton() {
 }
 
 // ----------------------
-// WebSocket 연결
+// API WS(4000) : 결제/세션 이벤트 전용
 // ----------------------
-function connectWS() {
-  ws = new WebSocket(`ws://${window.location.hostname}:3000`);
+function connectApiWS() {
+  // EC2 결제 서버 WS 허브
+  wsApi = new WebSocket(`ws://43.201.105.163:4000/ws`);
 
-  ws.onopen = () => {
-    console.log("✅ WS 연결됨");
+  wsApi.onopen = () => {
+    console.log("✅ wsApi 연결됨 (4000/ws)");
+    // 이미 세션코드를 알고 있으면 즉시 SUB
+    if (currentSessionCode) {
+      wsApi.send(JSON.stringify({ type: "SUB", session_code: currentSessionCode }));
+      console.log("[wsApi] SUB sent after open:", currentSessionCode);
+    }
   };
 
-  ws.onmessage = (e) => {
+  wsApi.onmessage = (e) => {
     const data = JSON.parse(e.data);
     const kind = data.type || data.action;
+
+    // 결제 서버가 세션 시작을 브로드캐스트하는 경우 → 코드 저장 + SUB
+    if (kind === "sessionStarted" && data.session?.session_code) {
+      currentSessionCode = data.session.session_code;
+      console.log("[wsApi] sessionStarted:", currentSessionCode);
+      if (wsApi?.readyState === WebSocket.OPEN) {
+        wsApi.send(JSON.stringify({ type: "SUB", session_code: currentSessionCode }));
+        console.log("[wsApi] SUB sent:", currentSessionCode);
+      }
+      return;
+    }
+
+    if (kind === "SUB_OK") {
+      console.log("[wsApi] SUB_OK:", data.session_code);
+      return;
+    }
+
+    if (kind === "SESSION_CARD_BOUND" && data.session_code === currentSessionCode) {
+    console.log("[wsApi] SESSION_CARD_BOUND:", data.session_code);
+      // 1) 화면은 카드로 고정(사용자 피드백)
+      if (__currentScreenId !== "screen-card") goToScreen("screen-card");
+  
+      // 2) 결제 확정 호출
+      fetch(`http://43.201.105.163:4000/api/purchase-sessions/${encodeURIComponent(currentSessionCode)}/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approve: true })
+      })
+      .then(async (res) => {
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error || `checkout failed: ${res.status}`);
+        console.log("✅ checkout ok:", json);
+  
+        // 3) 영수증 화면으로 전환 + 자동 타이머
+        goToScreen("screen-receipt");
+        clearUITimers();
+        receiptTimer = setTimeout(() => {
+          goToScreen("screen-goodbye");
+          goodbyeTimer = setTimeout(() => resetKioskFlow(), 2000);
+        }, 3000);
+      })
+      .catch((err) => {
+        console.error("❌ checkout error:", err);
+        // 실패 시 카드 화면 유지(사용자에게 에러 안내 가능)
+      });
+      return;
+    }
+
+    // (선택) 결제 완료/실패 등 추가 이벤트
+    if (kind === "paymentCompleted") {
+      console.log("[wsApi] paymentCompleted:", data);
+      // goToScreen("screen-receipt");
+      return;
+    }
+  };
+
+  wsApi.onclose = () => {
+    console.log("❌ wsApi 연결 종료, 재시도 예정…");
+    setTimeout(connectApiWS, 2000);
+  };
+}
+
+// ----------------------
+// Local WS(3000) : 라이다/YOLO/진행 제어 전용
+// ----------------------
+function connectLocalWS() {
+  wsLocal = new WebSocket(`ws://${window.location.hostname}:3000`);
+
+  wsLocal.onopen = () => {
+    console.log("✅ wsLocal 연결됨 (3000)");
+  };
+
+  wsLocal.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    const kind = data.type || data.action;
+
+    // 서버 주도 화면 전환
+    if (kind === "goToScreen" && data.screen) {
+      console.log("[wsLocal] goToScreen:", data.screen);
+      goToScreen(data.screen);
+      return;
+    }
 
     if (kind === "startKioskByLidar") {
       console.log("📡 라이다 감지 → 세션 시작");
@@ -207,45 +276,104 @@ function connectWS() {
       console.log("🧺 스캔 결과:", data);
     }
 
-    if (kind === "rfidDetected") {
+    if (kind === "rfidDetected" || kind === "rfidTagged") {
       console.log("💳 RFID UID:", data.uid);
-
-      if (TEST_CARD_AUTOPASS) {
-        goToScreen("screen-card");
-        // onEnterScreenCard()에서 자동 전환 스케줄링 수행
-      } else {
-        // 원래 카드 바인딩 API 호출 로직을 여기다 넣으면 됨
-        goToScreen("screen-card");
-      }
-    }
-
-    // 자동 전환 테스트용, 나중에 삭제 
-    if (kind === "rfidTagged") {
-      console.log("💳 RFID Tagged:", data.uid);
       goToScreen("screen-card");
     }
 
+    // 스캔 종료 신호 → 카드 화면으로
     if (kind === "scanComplete") {
-      console.log("🔚 스캔 완료(reason:", data.reason, ") → screen-card로 전환");
-      if (ws?.readyState === WebSocket.OPEN){
-        ws.send(JSON.stringify({ action: "stopVision" })); 
+      console.log("🔚 스캔 완료 → 카드화면으로");
+      if (wsLocal?.readyState === WebSocket.OPEN){
+        wsLocal.send(JSON.stringify({ action: "stopVision" })); // 파이썬 YOLO 중지 지시(안전)
       }
       goToScreen("screen-card");
+      return;
+    }
+
+    // “카드 태깅 대기” 신호 → 카드 화면 유지/진입
+    if (kind === "awaitingCard") {
+      console.log("⏳ 카드 태깅 대기중…");
+      if (__currentScreenId !== "screen-card") goToScreen("screen-card");
+      return;
+    }
+
+    // (서버) 카드 UID 바인딩 완료
+    if (kind === "cardBound") {
+      console.log("💳 cardBound:", data.session_code);
+      if (__currentScreenId !== "screen-card") goToScreen("screen-card");
+      return;
+    }
+
+    // (서버) 결제 완료 → 영수증 → 굿바이 → 초기화(타이머)
+    if (kind === "purchaseCompleted") {
+      console.log("✅ purchaseCompleted:", data);
+      goToScreen("screen-receipt");
+
+      // 타이머(원하는 시간으로 조절 가능)
+      clearUITimers();  // 기존 유틸 재사용
+      receiptTimer = setTimeout(() => {
+        goToScreen("screen-goodbye");
+        goodbyeTimer = setTimeout(() => {
+          resetKioskFlow();      // 세션/화면 초기화
+        }, 2000);                // 굿바이 유지 시간
+      }, 3000);                  // 영수증 유지 시간
+      return;
+    }
+
+
+    // ★ 로컬 서버가 세션코드를 알려줄 수 있는 경우(있을 때만):
+    if (kind === "sessionStarted" && data.session?.session_code) {
+      currentSessionCode = data.session.session_code;
+      console.log("[wsLocal] sessionStarted:", currentSessionCode);
+      // 코드 알게 되면 wsApi에 SUB
+      if (wsApi?.readyState === WebSocket.OPEN) {
+        wsApi.send(JSON.stringify({ type: "SUB", session_code: currentSessionCode }));
+        console.log("[wsApi] SUB sent via local sessionStarted:", currentSessionCode);
+      }
+      return;
     }
   };
 
-  ws.onclose = () => {
-    console.log("❌ WS 연결 종료, 재시도 중…");
-    setTimeout(connectWS, 2000);
+  wsLocal.onclose = () => {
+    console.log("❌ wsLocal 연결 종료, 재시도 예정…");
+    setTimeout(connectLocalWS, 2000);
   };
+}
+
+// ----------------------
+// (옵션) 폴백: WS가 꼬여도 1초마다 상태 폴링해서 전환
+// ----------------------
+let __pollTimer = null;
+function startSessionPoll() {
+  if (__pollTimer) return;
+  __pollTimer = setInterval(async () => {
+    if (!currentSessionCode) return;
+    try {
+      const r = await fetch(`http://43.201.105.163:4000/api/purchase-sessions/${currentSessionCode}`);
+      if (!r.ok) return;
+      const data = await r.json();
+      const status = data?.session?.status;
+      if (status === 'CARD_BOUND' || status === 'PAID') {
+        console.log('[POLL] status =', status, '→ 화면 전환');
+        goToScreen('screen-receipt'); // 필요 시 변경
+        clearInterval(__pollTimer);
+        __pollTimer = null;
+      }
+    } catch {}
+  }, 1000);
 }
 
 // ----------------------
 // 실행 시작
 // ----------------------
 window.onload = () => {
-  connectWS();
+  connectLocalWS(); // :3000
+  connectApiWS();   // :4000/ws
   setupStartButton();
   setupBasketImageAdvance();
   goToScreen("screen-start");
+
+  // (선택) 폴백도 켜두면 더 안전
+  startSessionPoll();
 };
