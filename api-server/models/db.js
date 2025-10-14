@@ -19,7 +19,7 @@ const pool = mysql.createPool({
   // 날짜/시간 일관성: 문자열로 받고(프런트/백엔드 변환 주도)
   dateStrings: true,
   // 서버/DB 타임존 다를 때 혼선 방지 (DB가 UTC라면 'Z', KST 고정이면 '+09:00')
-  timezone: 'Z',
+  // timezone: 'Z',
 });
 
 /** 초기 핑으로 연결 확인 (로그만) */

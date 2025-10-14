@@ -8,8 +8,8 @@ const helmet = require('helmet');
 // const morgan = require('morgan');
 const http = require('http');
 const WebSocket = require('ws');
+const cookieParser = require('cookie-parser');            // ✅ 추가
 const wsHub = require('./sockets/wsHub');
-
 
 const app = express();
 
@@ -18,33 +18,37 @@ const PORT = process.env.PORT || 4000;
 app.set('trust proxy', 1);
 
 /* -------------------- 미들웨어 -------------------- */
-// ✅ rawBody를 별도 미들웨어로 읽지 말고, express.json의 verify로 보존
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
+// ⚠️ 쿠키+인증(Credentials) 허용을 위해 origin을 명시적으로 지정
+app.use(cors({
+  origin: process.env.CLIENT_ORIGIN || true,              // ✅ 수정: http://localhost:3000 권장
+  credentials: true,
+}));
 app.use(compression());
 
-// ⚠️ 여기서 JSON 바디를 반드시 라우트 등록 "전에" 파싱해야 함
+// ⚠️ JSON 파서는 라우트 "등록 전에"
 app.use(express.json({
   limit: '10mb',
   verify: (req, _res, buf) => {
-    // 필요하면 원문 바디도 보존
     req.rawBody = buf?.length ? buf.toString('utf8') : '';
   }
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());                                   // ✅ 추가: HttpOnly 쿠키 읽기
 // app.use(morgan('combined'));
 
 /* -------------------- 라우트 모듈 -------------------- */
 const productRoutes         = require('./routes/productRoutes');
 const storeProductRoutes    = require('./routes/storeProductRoutes');
 const inventoryRoutes       = require('./routes/inventoryRoutes');
-// const prepaymentRoutes   = require('./routes/prepaymentRoutes');
 const purchaseRoutes        = require('./routes/purchaseRoutes');
 const refundRoutes          = require('./routes/refundRoutes');
 const dashboardRoutes       = require('./routes/dashboardRoutes');
 const cardInfoRoutes        = require('./routes/cardInfoRoutes');
 const dummySalesRoutes      = require('./routes/dummySalesRoutes');
 const purchaseSessionRoutes = require('./routes/purchaseSessionRoutes');
+const aiInsightRoutes       = require('./routes/aiInsightRoutes');
+const { router: authRoutes } = require('./routes/authRoutes');
 
 /* -------------------- 헬스체크 -------------------- */
 app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
@@ -66,16 +70,18 @@ app.get('/api/timezonedebug', async (_req, res) => {
 });
 
 /* -------------------- API 라우팅 -------------------- */
+// 인증 라우트를 제일 위쪽에 등록(의존 적음)
+app.use('/api/auth',           authRoutes);
 app.use('/api/products',          productRoutes);
 app.use('/api/store-products',    storeProductRoutes);
 app.use('/api/inventory-log',     inventoryRoutes);
-// app.use('/api/prepayments',     prepaymentRoutes);
 app.use('/api/purchases',         purchaseRoutes);
 app.use('/api/refunds',           refundRoutes);
 app.use('/api/dashboard',         dashboardRoutes);
 app.use('/api/card-info',         cardInfoRoutes);
 app.use('/api/dummy-sales',       dummySalesRoutes);       // ← POST /generate
 app.use('/api/purchase-sessions', purchaseSessionRoutes);
+app.use('/api/ai-insight', aiInsightRoutes);
 
 /* -------------------- 라우트 목록 로그 -------------------- */
 function printRoutes(app) {

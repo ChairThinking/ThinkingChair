@@ -2,25 +2,34 @@ const db = require('../models/db');
 
 // ─────────────────────────────────────────
 // 타임존 전략
-// - 저장: UTC로 고정(UTC_TIMESTAMP())
-// - 조회: KST 달력 경계(00:00:00 ~ 23:59:59)를 UTC로 변환해 BETWEEN
+// - 저장: UTC(UTC_TIMESTAMP())
+// - 조회/그룹핑/날짜경계: KST(+09:00) 달력 기준
+// - ts := COALESCE(purchased_at, created_at) 로 일관화
 // ─────────────────────────────────────────
-const KST = '+09:00';
+const KST = '+00:00';
 const UTC = '+00:00';
-const pad2 = (n) => String(n).padStart(2, '0');
-const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
+const pad2 = (n) => String(n).padStart(2, '0');
+function todayKstYmd() {
+  const now = new Date();
+  const k = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return `${k.getUTCFullYear()}-${pad2(k.getUTCMonth() + 1)}-${pad2(k.getUTCDate())}`;
+}
+function ymd(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** KST from/to (없으면 오늘 포함 최근 7일) */
 function kstRange(from, to) {
   if (!from || !to) {
-    const today = new Date();
-    const d7 = new Date(today);
+    const today = todayKstYmd();
+    const t = new Date(`${today}T00:00:00+09:00`);
+    const d7 = new Date(t);
     d7.setDate(d7.getDate() - 6);
     from = ymd(d7);
-    to   = ymd(today);
+    to = today;
   }
-  const startKst = `${from} 00:00:00`;
-  const endKst   = `${to} 23:59:59`;
-  return { from, to, startKst, endKst };
+  return { from, to, startKst: `${from} 00:00:00`, endKst: `${to} 23:59:59` };
 }
 
 /** 트랜잭션 헬퍼 */
@@ -39,18 +48,12 @@ async function withTx(fn) {
   }
 }
 
-/**
- * 단건 구매 (RFID 전용)
- * body: { store_product_id, quantity }
- * 저장 시간: UTC
- */
+/** 단건 구매 (UTC로 저장) */
 exports.createPurchase = async (req, res) => {
   const { store_product_id, quantity } = req.body;
-
   if (!store_product_id || !quantity || quantity <= 0) {
     return res.status(400).json({ message: '요청 데이터 오류' });
   }
-
   try {
     const result = await withTx(async (conn) => {
       const [[product]] = await conn.query(
@@ -81,7 +84,6 @@ exports.createPurchase = async (req, res) => {
         store_id: product.store_id,
       };
     });
-
     res.status(201).json(result);
   } catch (err) {
     console.error('구매 오류:', err);
@@ -89,18 +91,12 @@ exports.createPurchase = async (req, res) => {
   }
 };
 
-/**
- * 여러 상품 구매 (RFID 전용)
- * body: { items: [{ store_product_id, quantity }, ...] }
- * 저장 시간: UTC
- */
+/** 여러 상품 구매 (UTC로 저장) */
 exports.createBatchPurchase = async (req, res) => {
   const { items } = req.body;
-
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ message: '요청 데이터가 올바르지 않습니다.' });
   }
-
   try {
     const result = await withTx(async (conn) => {
       let total_price = 0;
@@ -110,7 +106,6 @@ exports.createBatchPurchase = async (req, res) => {
         if (!store_product_id || !quantity || quantity <= 0) {
           throw Object.assign(new Error('요청 데이터 오류'), { status: 400 });
         }
-
         const [[product]] = await conn.query(
           'SELECT sale_price, quantity, store_id FROM store_products WHERE id = ? FOR UPDATE',
           [store_product_id]
@@ -146,16 +141,12 @@ exports.createBatchPurchase = async (req, res) => {
   }
 };
 
-/**
- * 기간 매출 조회 (KST 기준, 파라미터 없으면 최근 7일)
- * GET /api/purchases?from=YYYY-MM-DD&to=YYYY-MM-DD
- */
+/** 기간 매출 조회 (KST, 기본 최근 7일) */
 exports.getPurchasesByDateRange = async (req, res) => {
   try {
     const { from: qFrom, to: qTo } = req.query;
     const { from, to, startKst, endKst } = kstRange(qFrom, qTo);
 
-    // ⚠️ 상품명은 products.name 이다. sp.name 사용 금지!
     const [rows] = await db.query(
       `
       SELECT
@@ -163,8 +154,10 @@ exports.getPurchasesByDateRange = async (req, res) => {
         pu.quantity,
         pu.unit_price,
         pu.total_price,
-        pu.purchased_at, -- UTC
-        CONVERT_TZ(pu.purchased_at, '${UTC}', '${KST}') AS purchased_at_kst,
+        /* UTC 타임스탬프 선택 */
+        COALESCE(pu.purchased_at, pu.created_at) AS ts_utc,
+        /* 표기용 KST */
+        CONVERT_TZ(COALESCE(pu.purchased_at, pu.created_at), '${UTC}', '${KST}') AS purchased_at_kst,
         pr.name        AS product_name,
         pr.category    AS category,
         pr.barcode     AS barcode,
@@ -173,26 +166,22 @@ exports.getPurchasesByDateRange = async (req, res) => {
       FROM purchases pu
       JOIN store_products sp ON pu.store_product_id = sp.id
       JOIN products pr       ON sp.product_id = pr.id
-      WHERE pu.purchased_at BETWEEN
+      WHERE COALESCE(pu.purchased_at, pu.created_at) BETWEEN
             CONVERT_TZ(?, '${KST}', '${UTC}')
         AND CONVERT_TZ(?, '${KST}', '${UTC}')
-      ORDER BY pu.purchased_at DESC, pu.id DESC
+      ORDER BY ts_utc DESC, pu.id DESC
       `,
       [startKst, endKst]
     );
 
-    res.status(200).json({
-      range: { from, to },
-      count: rows.length,
-      items: rows
-    });
+    res.status(200).json({ range: { from, to }, count: rows.length, items: rows });
   } catch (err) {
     console.error('매출 조회 오류:', err);
     res.status(500).json({ message: '서버 오류', detail: String(err?.message || err) });
   }
 };
 
-/** 전체 매출 누적 요약 */
+/** 전체 누적 요약 */
 exports.getPurchaseSummary = async (_req, res) => {
   try {
     const [[summary]] = await db.query(
@@ -217,7 +206,8 @@ exports.getTodaySummary = async (_req, res) => {
         COALESCE(SUM(pu.quantity), 0)    AS total_quantity,
         COUNT(*)                          AS orders
       FROM purchases pu
-      WHERE DATE(CONVERT_TZ(pu.purchased_at, '${UTC}', '${KST}')) = CURDATE()
+      WHERE DATE(CONVERT_TZ(COALESCE(pu.purchased_at, pu.created_at), '${UTC}', '${KST}'))
+            = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '${UTC}', '${KST}'))
       `
     );
     res.json(row);
@@ -230,7 +220,6 @@ exports.getTodaySummary = async (_req, res) => {
 /** 오늘(KST) 매출 목록 */
 exports.getTodayList = async (_req, res) => {
   try {
-    // ⚠️ 여기서도 상품명은 products.name!
     const [rows] = await db.query(
       `
       SELECT
@@ -238,13 +227,14 @@ exports.getTodayList = async (_req, res) => {
         pu.quantity,
         pu.unit_price,
         pu.total_price,
-        CONVERT_TZ(pu.purchased_at, '${UTC}', '${KST}') AS purchased_at_kst,
+        CONVERT_TZ(COALESCE(pu.purchased_at, pu.created_at), '${UTC}', '${KST}') AS purchased_at_kst,
         pr.name AS product_name
       FROM purchases pu
       JOIN store_products sp ON pu.store_product_id = sp.id
       JOIN products pr       ON sp.product_id = pr.id
-      WHERE DATE(CONVERT_TZ(pu.purchased_at, '${UTC}', '${KST}')) = CURDATE()
-      ORDER BY pu.purchased_at DESC
+      WHERE DATE(CONVERT_TZ(COALESCE(pu.purchased_at, pu.created_at), '${UTC}', '${KST}'))
+            = DATE(CONVERT_TZ(UTC_TIMESTAMP(), '${UTC}', '${KST}'))
+      ORDER BY COALESCE(pu.purchased_at, pu.created_at) DESC
       `
     );
     res.json(rows);
@@ -260,7 +250,6 @@ exports.getWeeklySales = async (req, res) => {
     const { from: qFrom, to: qTo } = req.query;
     const { from, to } = kstRange(qFrom, qTo);
 
-    // MySQL8 CTE 버전 (5.7/MariaDB면 CTE 미지원 → 필요시 단순 GROUP BY 버전으로 교체)
     const [rows] = await db.query(
       `
       WITH RECURSIVE date_series AS (
@@ -269,16 +258,16 @@ exports.getWeeklySales = async (req, res) => {
         SELECT DATE_ADD(d, INTERVAL 1 DAY) FROM date_series WHERE d < DATE(?)
       ),
       daily AS (
-        SELECT DATE(CONVERT_TZ(purchased_at, '${UTC}', '${KST}')) AS d,
+        SELECT DATE(CONVERT_TZ(COALESCE(purchased_at, created_at), '${UTC}', '${KST}')) AS d,
                SUM(total_price) AS total
           FROM purchases
-         WHERE purchased_at BETWEEN
+         WHERE COALESCE(purchased_at, created_at) BETWEEN
                CONVERT_TZ(CONCAT(?, ' 00:00:00'), '${KST}', '${UTC}')
            AND CONVERT_TZ(CONCAT(?, ' 23:59:59'), '${KST}', '${UTC}')
-         GROUP BY DATE(CONVERT_TZ(purchased_at, '${UTC}', '${KST}'))
+         GROUP BY DATE(CONVERT_TZ(COALESCE(purchased_at, created_at), '${UTC}', '${KST}'))
       )
-      SELECT DATE_FORMAT(ds.d, '%m-%d') AS date,
-             COALESCE(dy.total, 0)       AS total
+      SELECT DATE_FORMAT(ds.d, '%Y-%m-%d') AS date,
+             COALESCE(dy.total, 0)         AS total
         FROM date_series ds
         LEFT JOIN daily dy ON dy.d = ds.d
        ORDER BY ds.d
@@ -293,7 +282,7 @@ exports.getWeeklySales = async (req, res) => {
   }
 };
 
-/** 카테고리별 매출 요약 */
+/** 카테고리별 매출 요약(전체) */
 exports.getSalesByCategory = async (_req, res) => {
   try {
     const [rows] = await db.query(
