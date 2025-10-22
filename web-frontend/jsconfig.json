@@ -3,8 +3,8 @@
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "Node",
-    "jsx": "react-jsx",   // ✅ JS 파일에서도 JSX 허용
-    "allowJs": true,      // ✅ .js 파일 포함
+    "jsx": "react-jsx", 
+    "allowJs": true, 
     "checkJs": false
   },
   "include": ["src"]

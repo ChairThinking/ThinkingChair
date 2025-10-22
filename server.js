@@ -15,7 +15,7 @@ function createHash(data) {
 
 // --- MySQL 설정 (유일한 데이터베이스) ---
 const mysqlConfig = {
-    host: 'kiosk-db.cxss0eug8zre.ap-northeast-2.rds.amazonaws.com',
+    host: 'kiosk-db-new.cniu0ay84yaw.ap-northeast-2.rds.amazonaws.com',
     user: 'admin',
     password: 'ghdwldud', // RDS 비밀번호 재설정한 것으로 입력
     database: 'kiosk_db',
