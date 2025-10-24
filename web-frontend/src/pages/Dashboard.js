@@ -93,7 +93,7 @@ function Dashboard() {
             {/* 기존 AI 더미 데이터 생성 버튼 */}
             <Link
               to="/ai-generator"
-              className="bg-gradient-to-r from-pink-600 to-purple-800 text-white px-3 py-2 rounded hover:opacity-90 text-sm font-semibold shadow-sm"
+              className="bg-gradient-to-r from-emerald-500 to-emerald-700 text-white px-3 py-2 rounded hover:opacity-90 text-sm font-semibold shadow-sm"
             >
               AI로 더미 데이터 만들기
             </Link>
