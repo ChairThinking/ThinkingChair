@@ -13,26 +13,31 @@ export default function StockPage() {
   const [selectedIds, setSelectedIds] = useState([]);
   const itemsPerPage = 10;
 
+  // 재고 목록 불러오기
   useEffect(() => {
-    axios.get("/api/store-products") // ← 상대 경로로 수정
-      .then(res => {
-        setProducts(res.data.map(p => ({
-          id: p.id,
-          product_id: p.product_id,
-          name: p.name,
-          barcode: p.barcode,
-          category: p.category,
-          manufacturer: p.manufacturer,
-          brand: p.brand,
-          origin: p.origin_country,
-          price: p.sale_price,
-          quantity: p.quantity,
-          image: p.image_url || "/images/default.jpg"
-        })));
+    axios
+      .get("/api/store-products")
+      .then((res) => {
+        setProducts(
+          res.data.map((p) => ({
+            id: p.id,
+            product_id: p.product_id,
+            name: p.name,
+            barcode: p.barcode,
+            category: p.category,
+            manufacturer: p.manufacturer,
+            brand: p.brand,
+            origin: p.origin_country,
+            price: p.sale_price,
+            quantity: p.quantity,
+            image: p.image_url || "/images/default.jpg",
+          }))
+        );
       })
-      .catch(err => console.error("재고 불러오기 실패:", err));
+      .catch((err) => console.error("재고 불러오기 실패:", err));
   }, []);
 
+  // 검색 필터링
   const filtered = products.filter((p) => {
     const value =
       searchType === "상품명"
@@ -43,25 +48,32 @@ export default function StockPage() {
     return value.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
+  // 페이지네이션 계산
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
   const paginated = filtered.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
+  // 체크박스 선택/해제
   const handleCheckboxChange = (id) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
   };
 
+  // 선택 삭제
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
     if (!window.confirm("선택한 상품을 삭제하시겠습니까?")) return;
 
     try {
       for (const id of selectedIds) {
-        await axios.delete(`/api/store-products/${id}`); // ← 상대 경로로 수정
+        await axios.delete(`/api/store-products/${id}`);
       }
-      setProducts(products.filter(p => !selectedIds.includes(p.id)));
+
+      // 프론트 목록에서도 제거
+      setProducts((prev) => prev.filter((p) => !selectedIds.includes(p.id)));
       setSelectedIds([]);
       alert("삭제 완료!");
     } catch (err) {
@@ -70,14 +82,74 @@ export default function StockPage() {
     }
   };
 
+  // 저장 (판매가 / 재고수량 수정 후 서버에 PUT)
+  const handleSave = async () => {
+    // 간단 유효성 체크
+    if (
+      inputPrice === "" ||
+      inputPrice === null ||
+      inputPrice === undefined ||
+      inputQuantity === "" ||
+      inputQuantity === null ||
+      inputQuantity === undefined
+    ) {
+      alert("판매가격과 재고수량을 모두 입력해주세요.");
+      return;
+    }
+
+    const newPrice = Number(inputPrice);
+    const newQty = Number(inputQuantity);
+
+    if (isNaN(newPrice) || isNaN(newQty)) {
+      alert("숫자 형식이 잘못되었습니다.");
+      return;
+    }
+    if (newQty < 0) {
+      alert("재고 수량은 0보다 작을 수 없습니다.");
+      return;
+    }
+
+    try {
+      // 서버 업데이트 요청 (원래 컨트롤러 로직: sale_price / quantity 기반)
+      await axios.put(`/api/store-products/${selectedProduct.id}`, {
+        sale_price: newPrice,
+        quantity: newQty,
+      });
+
+      // 프론트 상태 products도 업데이트해서 화면 즉시 반영
+      setProducts((prev) =>
+        prev.map((item) =>
+          item.id === selectedProduct.id
+            ? {
+                ...item,
+                price: newPrice,
+                quantity: newQty,
+              }
+            : item
+        )
+      );
+
+      // 모달 닫기
+      setSelectedProduct(null);
+      alert("수정되었습니다.");
+    } catch (err) {
+      console.error("수정 실패:", err);
+      alert("수정 중 오류가 발생했습니다.");
+    }
+  };
+
   return (
     <div className="flex min-h-screen relative">
+      {/* 사이드바 영역 */}
       <div className="w-[12vw] min-w-[140px] max-w-[200px] bg-white shadow-md">
         <Sidebar />
       </div>
+
+      {/* 메인 컨텐츠 영역 */}
       <main className="flex-1 bg-[#e9f0ff] px-[4vw] py-[3vw]">
         <h2 className="text-2xl font-bold text-gray-800 mb-6">재고관리</h2>
 
+        {/* 검색 영역 */}
         <div className="flex items-center gap-4 mb-6">
           <select
             value={searchType}
@@ -97,10 +169,13 @@ export default function StockPage() {
           />
         </div>
 
+        {/* 테이블 */}
         <table className="w-full text-sm bg-white rounded-xl overflow-hidden shadow">
           <thead className="border-b text-left">
             <tr>
-              <th className="px-4 py-3"><input type="checkbox" disabled /></th>
+              <th className="px-4 py-3">
+                <input type="checkbox" disabled />
+              </th>
               <th className="px-4 py-3">No.</th>
               <th className="px-4 py-3">상품명</th>
               <th className="px-4 py-3">판매가</th>
@@ -128,65 +203,174 @@ export default function StockPage() {
                     onChange={() => handleCheckboxChange(item.id)}
                   />
                 </td>
-                <td className="px-4 py-3">{String(item.id).padStart(3, "0")}</td>
+                <td className="px-4 py-3">
+                  {String(item.id).padStart(3, "0")}
+                </td>
                 <td className="px-4 py-3 flex items-center gap-3">
-                  <img src={item.image} alt="상품 이미지" className="w-12 h-12" />
+                  <img
+                    src={item.image}
+                    alt="상품 이미지"
+                    className="w-12 h-12"
+                  />
                   <div>
-                    <div className="text-xs text-gray-500">{item.barcode}</div>
-                    <div className="font-semibold text-gray-800">{item.name}</div>
-                    <div className="text-xs text-gray-500">{item.manufacturer}</div>
+                    <div className="text-xs text-gray-500">
+                      {item.barcode}
+                    </div>
+                    <div className="font-semibold text-gray-800">
+                      {item.name}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {item.manufacturer}
+                    </div>
                   </div>
                 </td>
-                <td className="px-4 py-3">{item.price.toLocaleString()} 원</td>
+                <td className="px-4 py-3">
+                  {item.price.toLocaleString()} 원
+                </td>
                 <td className="px-4 py-3">{item.category}</td>
-                <td className="px-4 py-3 font-bold text-center">{item.quantity}</td>
+                <td className="px-4 py-3 font-bold text-center">
+                  {item.quantity}
+                </td>
                 <td className="px-4 py-3"></td>
               </tr>
             ))}
           </tbody>
         </table>
 
+        {/* 하단 조작 영역 */}
         <div className="flex justify-between items-center mt-6">
           <div></div>
           <div className="flex gap-4">
-            <button onClick={handleDeleteSelected} className="bg-red-500 text-white px-4 py-2 rounded">선택 삭제</button>
+            <button
+              onClick={handleDeleteSelected}
+              className="bg-red-500 text-white px-4 py-2 rounded"
+            >
+              선택 삭제
+            </button>
           </div>
         </div>
 
+        {/* 페이지네이션 */}
         <div className="flex justify-center items-center gap-4 mt-4">
-          <button onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} disabled={currentPage === 1} className="px-2 text-lg text-gray-700 disabled:opacity-50">&lt;</button>
+          <button
+            onClick={() =>
+              setCurrentPage((prev) => Math.max(prev - 1, 1))
+            }
+            disabled={currentPage === 1}
+            className="px-2 text-lg text-gray-700 disabled:opacity-50"
+          >
+            &lt;
+          </button>
+
           {[...Array(totalPages)].map((_, i) => (
-            <button key={i + 1} onClick={() => setCurrentPage(i + 1)} className={`px-3 py-1 rounded ${currentPage === i + 1 ? "bg-blue-500 text-white" : "text-gray-700"}`}>{i + 1}</button>
+            <button
+              key={i + 1}
+              onClick={() => setCurrentPage(i + 1)}
+              className={`px-3 py-1 rounded ${
+                currentPage === i + 1
+                  ? "bg-blue-500 text-white"
+                  : "text-gray-700"
+              }`}
+            >
+              {i + 1}
+            </button>
           ))}
-          <button onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className="px-2 text-lg text-gray-700 disabled:opacity-50">&gt;</button>
+
+          <button
+            onClick={() =>
+              setCurrentPage((prev) =>
+                Math.min(prev + 1, totalPages)
+              )
+            }
+            disabled={currentPage === totalPages}
+            className="px-2 text-lg text-gray-700 disabled:opacity-50"
+          >
+            &gt;
+          </button>
         </div>
 
+        {/* 수정 모달 */}
         {selectedProduct && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-8 rounded-lg w-[700px] grid grid-cols-2 gap-6 relative">
-              <button onClick={() => setSelectedProduct(null)} className="absolute top-4 right-4 text-2xl">×</button>
+              <button
+                onClick={() => setSelectedProduct(null)}
+                className="absolute top-4 right-4 text-2xl"
+              >
+                ×
+              </button>
+
+              {/* 왼쪽 정보 영역 */}
               <div className="col-span-1 space-y-4">
-                <div className="flex justify-between border-b py-2"><span>상품명</span><span>{selectedProduct.name}</span></div>
-                <div className="flex justify-between border-b py-2"><span>생산지</span><span>{selectedProduct.origin}</span></div>
-                <div className="flex justify-between border-b py-2"><span>브랜드</span><span>{selectedProduct.brand}</span></div>
-                <div className="flex justify-between border-b py-2"><span>제조사</span><span>{selectedProduct.manufacturer}</span></div>
-                <div className="flex justify-between border-b py-2"><span>분류</span><span>{selectedProduct.category}</span></div>
-                <div className="flex justify-between border-b py-2"><span>바코드</span><span>{selectedProduct.barcode}</span></div>
+                <div className="flex justify-between border-b py-2">
+                  <span>상품명</span>
+                  <span>{selectedProduct.name}</span>
+                </div>
+                <div className="flex justify-between border-b py-2">
+                  <span>생산지</span>
+                  <span>{selectedProduct.origin}</span>
+                </div>
+                <div className="flex justify-between border-b py-2">
+                  <span>브랜드</span>
+                  <span>{selectedProduct.brand}</span>
+                </div>
+                <div className="flex justify-between border-b py-2">
+                  <span>제조사</span>
+                  <span>{selectedProduct.manufacturer}</span>
+                </div>
+                <div className="flex justify-between border-b py-2">
+                  <span>분류</span>
+                  <span>{selectedProduct.category}</span>
+                </div>
+                <div className="flex justify-between border-b py-2">
+                  <span>바코드</span>
+                  <span>{selectedProduct.barcode}</span>
+                </div>
+
                 <div className="flex justify-between border-b py-2">
                   <span>판매가격</span>
-                  <input type="number" value={inputPrice} onChange={(e) => setInputPrice(e.target.value)} className="border px-2 py-1 w-40 rounded text-right" />
+                  <input
+                    type="number"
+                    value={inputPrice}
+                    onChange={(e) => setInputPrice(e.target.value)}
+                    className="border px-2 py-1 w-40 rounded text-right"
+                  />
                 </div>
+
                 <div className="flex justify-between border-b py-2">
                   <span>재고수량</span>
-                  <input type="number" value={inputQuantity} onChange={(e) => setInputQuantity(e.target.value)} className="border px-2 py-1 w-40 rounded text-right" />
+                  <input
+                    type="number"
+                    value={inputQuantity}
+                    onChange={(e) => setInputQuantity(e.target.value)}
+                    className="border px-2 py-1 w-40 rounded text-right"
+                  />
                 </div>
               </div>
+
+              {/* 오른쪽 이미지 영역 */}
               <div className="col-span-1 flex items-center justify-center">
-                <img src={selectedProduct.image || "/images/default.jpg"} alt="상품 이미지" className="w-48 h-48 object-contain" />
+                <img
+                  src={selectedProduct.image || "/images/default.jpg"}
+                  alt="상품 이미지"
+                  className="w-48 h-48 object-contain"
+                />
               </div>
+
+              {/* 하단 버튼 영역 */}
               <div className="col-span-2 flex justify-end gap-4 mt-4">
-                <button className="bg-blue-500 text-white px-4 py-2 rounded">저장</button>
-                <button onClick={() => setSelectedProduct(null)} className="bg-red-100 text-red-600 px-4 py-2 rounded">취소</button>
+                <button
+                  onClick={handleSave}
+                  className="bg-blue-500 text-white px-4 py-2 rounded"
+                >
+                  저장
+                </button>
+                <button
+                  onClick={() => setSelectedProduct(null)}
+                  className="bg-red-100 text-red-600 px-4 py-2 rounded"
+                >
+                  취소
+                </button>
               </div>
             </div>
           </div>

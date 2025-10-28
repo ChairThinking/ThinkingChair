@@ -3,10 +3,10 @@ const db = require('../models/db');
 // ─────────────────────────────────────────
 // 타임존 전략
 // - 저장: UTC(UTC_TIMESTAMP())
-// - 조회/그룹핑/날짜경계: KST(+00:00) 달력 기준
+// - 조회/그룹핑/날짜경계: KST(+09:00) 달력 기준
 // - ts := COALESCE(purchased_at, created_at) 로 일관화
 // ─────────────────────────────────────────
-const KST = '+00:00';
+const KST = '+09:00';
 const UTC = '+00:00';
 
 const pad2 = (n) => String(n).padStart(2, '0');
