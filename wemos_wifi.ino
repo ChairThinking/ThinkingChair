@@ -7,11 +7,11 @@ const char* ssid = "";
 const char* password = "";
 
 // ===== (기존) 태그 기록 서버 =====
-static const char* TAG_URL = "http://43.201.105.163:8080/api/tag";
+static const char* TAG_URL = "http://13.209.14.101:8080/api/tag";
 
 // ===== 결제 서버 설정 =====
 static const char* KIOSK_ID   = "KIOSK-01";
-static const char* API_BASE   = "http://43.201.105.163:4000/api";
+static const char* API_BASE   = "http://13.209.14.101:4000/api";
 static const bool  RECORD_TAG = false;   // 태그 수집 서버가 자주 실패하니 false 유지 권장
 
 // ===== 세션코드/타임스탬프 캐시 (★ 추가) =====
