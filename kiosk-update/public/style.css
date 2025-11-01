@@ -194,3 +194,44 @@ html {
   border-radius: 20px;
   cursor: pointer;
 }
+
+/* 상품확인 화면 */
+.items-table { width: 100%; max-width: 1100px; margin: 0 auto 20px; }
+.item-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 220px 220px; /* 썸네일 | 이름 | 수량 | 금액 */
+  align-items: center;
+  gap: 20px;
+  padding: 24px 16px;
+  border-bottom: 1px solid #e6e6e6;
+  background: #fff;
+}
+.item-thumb { width: 90px; height: 90px; object-fit: cover; border-radius: 8px; }
+.item-name { font-size: 36px; color: #111; }
+.qty-box {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  background: #6ba229; color: #fff; border-radius: 16px; height: 88px;
+  font-size: 40px; font-weight: 700;
+}
+.btn-qty {
+  width: 72px; height: 72px; border:none; border-radius: 12px; background:#fff; color:#6ba229;
+  font-size: 40px; font-weight: 800; cursor: pointer;
+}
+.item-price { font-size: 40px; text-align: right; color:#111; }
+
+.items-footer {
+  width: 100%; max-width:1100px; margin: 24px auto 0; display:flex; align-items:center; justify-content:space-between;
+}
+.items-pager { display:flex; align-items:center; gap:16px; }
+.btn-ghost {
+  font-size: 32px; padding: 12px 24px; border-radius: 12px; background:#eee; border:none; cursor:pointer;
+}
+.page-label { font-size: 28px; color:#555; }
+
+.paybar { display:flex; align-items:center; gap: 24px; }
+.total-wrap { display:flex; align-items:baseline; gap:16px; }
+.total-label { font-size: 40px; color:#111; }
+.total-amount { font-size: 48px; color:#6ba229; font-weight: 800; }
+.cta-pay {
+  font-size: 44px; padding: 20px 44px; border:none; border-radius: 20px; background:#6ba229; color:#fff; cursor:pointer;
+}

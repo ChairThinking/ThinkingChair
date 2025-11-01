@@ -26,7 +26,7 @@
         </header>
         <main class="main-content">
           <h2 class="title basket-title">
-            계산대 옆 표시된 곳에<br />상품을 올려주세요
+            상품을 올려주세요
           </h2>
           <img src="assets/basket.png" alt="장바구니" class="basket-img" />
         </main>
@@ -45,13 +45,44 @@
             <span></span><span></span><span></span><span></span> <span></span
             ><span></span><span></span><span></span>
           </div>
-          <button button id="simulate-scan-btn" class="simulate-scan-btn">
+          <!-- <button button id="simulate-scan-btn" class="simulate-scan-btn">
             상품 인식 시뮬레이션
-          </button>
+          </button> -->
         </main>
       </section>
 
-      <!-- 네 번째: RFID 태깅 대기 화면 -->
+      <!-- 네 번째: 상품확인 화면-->>
+      <section id="screen-items" class="screen">
+        <header class="header">
+          <h1><span class="green">띵킹</span>마트</h1>
+        </header>
+
+        <main class="main-content" style="width:100%;">
+          <h2 class="title" style="margin-bottom:40px;">상품 종류와 개수를 확인해주세요</h2>
+
+          <div id="items-table" class="items-table">
+            <!-- JS에서 행 렌더링: 썸네일 | 이름 | 수량(+/−) | 금액 -->
+          </div>
+
+          <div class="items-footer">
+            <div class="items-pager">
+              <button id="items-prev" class="btn-ghost">이전 페이지</button>
+              <span id="items-page" class="page-label">1 / 1</span>
+              <button id="items-next" class="btn-ghost">다음 페이지</button>
+            </div>
+
+            <div class="paybar">
+              <div class="total-wrap">
+                <span class="total-label">결제금액</span>
+                <span id="items-total" class="total-amount">0 원</span>
+              </div>
+              <button id="go-card" class="cta-pay">결제하기</button>
+            </div>
+          </div>
+        </main>
+      </section>
+
+      <!-- 다섯 번째: RFID 태깅 대기 화면 -->
       <section id="screen-card" class="screen">
         <header class="header">
           <h1><span class="green">띵킹</span>마트</h1>
@@ -63,7 +94,7 @@
       </section>
 
 
-      <!-- 다섯 번째: 영수증 출력 화면 -->
+      <!-- 여섯 번째: 영수증 출력 화면 -->
       <section id="screen-receipt" class="screen">
         <header class="header">
           <h1><span class="green">띵킹</span>마트</h1>
@@ -77,7 +108,8 @@
           />
         </main>
       </section>
-      <!-- 여섯 번째: 종료 인사 화면 -->
+
+      <!-- 일곱 번째: 종료 인사 화면 -->
       <section id="screen-goodbye" class="screen">
         <header class="header">
           <h1><span class="green">띵킹</span>마트</h1>
