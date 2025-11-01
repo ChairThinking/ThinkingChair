@@ -37,7 +37,6 @@ export default function StockPage() {
       .catch((err) => console.error("재고 불러오기 실패:", err));
   }, []);
 
-  // 검색 필터링
   const filtered = products.filter((p) => {
     const value =
       searchType === "상품명"
@@ -48,21 +47,18 @@ export default function StockPage() {
     return value.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  // 페이지네이션 계산
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
   const paginated = filtered.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
-  // 체크박스 선택/해제
   const handleCheckboxChange = (id) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
   };
 
-  // 선택 삭제
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
     if (!window.confirm("선택한 상품을 삭제하시겠습니까?")) return;
@@ -72,7 +68,6 @@ export default function StockPage() {
         await axios.delete(`/api/store-products/${id}`);
       }
 
-      // 프론트 목록에서도 제거
       setProducts((prev) => prev.filter((p) => !selectedIds.includes(p.id)));
       setSelectedIds([]);
       alert("삭제 완료!");
@@ -82,9 +77,7 @@ export default function StockPage() {
     }
   };
 
-  // 저장 (판매가 / 재고수량 수정 후 서버에 PUT)
   const handleSave = async () => {
-    // 간단 유효성 체크
     if (
       inputPrice === "" ||
       inputPrice === null ||
@@ -110,13 +103,11 @@ export default function StockPage() {
     }
 
     try {
-      // 서버 업데이트 요청 (원래 컨트롤러 로직: sale_price / quantity 기반)
       await axios.put(`/api/store-products/${selectedProduct.id}`, {
         sale_price: newPrice,
         quantity: newQty,
       });
 
-      // 프론트 상태 products도 업데이트해서 화면 즉시 반영
       setProducts((prev) =>
         prev.map((item) =>
           item.id === selectedProduct.id
@@ -129,7 +120,6 @@ export default function StockPage() {
         )
       );
 
-      // 모달 닫기
       setSelectedProduct(null);
       alert("수정되었습니다.");
     } catch (err) {
@@ -140,16 +130,16 @@ export default function StockPage() {
 
   return (
     <div className="flex min-h-screen relative">
-      {/* 사이드바 영역 */}
+      {/* 사이드바 */}
       <div className="w-[12vw] min-w-[140px] max-w-[200px] bg-white shadow-md">
         <Sidebar />
       </div>
 
-      {/* 메인 컨텐츠 영역 */}
+      {/* 메인 */}
       <main className="flex-1 bg-[#e9f0ff] px-[4vw] py-[3vw]">
         <h2 className="text-2xl font-bold text-gray-800 mb-6">재고관리</h2>
 
-        {/* 검색 영역 */}
+        {/* 검색 */}
         <div className="flex items-center gap-4 mb-6">
           <select
             value={searchType}
@@ -206,17 +196,17 @@ export default function StockPage() {
                 <td className="px-4 py-3">
                   {String(item.id).padStart(3, "0")}
                 </td>
-                <td className="px-4 py-3 flex items-center gap-3">
+
+                {/* 상품명: 전체 표시, 자연 줄바꿈 */}
+                <td className="px-4 py-3 flex items-start gap-3">
                   <img
                     src={item.image}
                     alt="상품 이미지"
-                    className="w-12 h-12"
+                    className="w-12 h-12 flex-shrink-0"
                   />
                   <div>
-                    <div className="text-xs text-gray-500">
-                      {item.barcode}
-                    </div>
-                    <div className="font-semibold text-gray-800">
+                    <div className="text-xs text-gray-500">{item.barcode}</div>
+                    <div className="font-semibold text-gray-800 whitespace-normal break-words">
                       {item.name}
                     </div>
                     <div className="text-xs text-gray-500">
@@ -224,6 +214,7 @@ export default function StockPage() {
                     </div>
                   </div>
                 </td>
+
                 <td className="px-4 py-3">
                   {item.price.toLocaleString()} 원
                 </td>
@@ -237,7 +228,7 @@ export default function StockPage() {
           </tbody>
         </table>
 
-        {/* 하단 조작 영역 */}
+        {/* 하단 버튼 */}
         <div className="flex justify-between items-center mt-6">
           <div></div>
           <div className="flex gap-4">
@@ -300,33 +291,53 @@ export default function StockPage() {
                 ×
               </button>
 
-              {/* 왼쪽 정보 영역 */}
+              {/* 상품명 (두 줄까지만 표시) */}
+              <div
+                className="col-span-2 text-center text-base font-semibold leading-snug px-4"
+                style={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  wordBreak: "keep-all",
+                }}
+              >
+                {selectedProduct.name}
+              </div>
+
+              {/* 왼쪽 정보 */}
               <div className="col-span-1 space-y-4">
                 <div className="flex justify-between border-b py-2">
-                  <span>상품명</span>
-                  <span>{selectedProduct.name}</span>
-                </div>
-                <div className="flex justify-between border-b py-2">
                   <span>생산지</span>
-                  <span>{selectedProduct.origin}</span>
+                  <span className="text-right max-w-[50%] break-keep">
+                    {selectedProduct.origin}
+                  </span>
                 </div>
                 <div className="flex justify-between border-b py-2">
                   <span>브랜드</span>
-                  <span>{selectedProduct.brand}</span>
+                  <span className="text-right max-w-[50%] break-keep">
+                    {selectedProduct.brand}
+                  </span>
                 </div>
                 <div className="flex justify-between border-b py-2">
                   <span>제조사</span>
-                  <span>{selectedProduct.manufacturer}</span>
+                  <span className="text-right max-w-[50%] break-keep">
+                    {selectedProduct.manufacturer}
+                  </span>
                 </div>
                 <div className="flex justify-between border-b py-2">
                   <span>분류</span>
-                  <span>{selectedProduct.category}</span>
+                  <span className="text-right max-w-[50%] break-keep">
+                    {selectedProduct.category}
+                  </span>
                 </div>
                 <div className="flex justify-between border-b py-2">
                   <span>바코드</span>
-                  <span>{selectedProduct.barcode}</span>
+                  <span className="text-right max-w-[50%] break-all">
+                    {selectedProduct.barcode}
+                  </span>
                 </div>
-
                 <div className="flex justify-between border-b py-2">
                   <span>판매가격</span>
                   <input
@@ -336,7 +347,6 @@ export default function StockPage() {
                     className="border px-2 py-1 w-40 rounded text-right"
                   />
                 </div>
-
                 <div className="flex justify-between border-b py-2">
                   <span>재고수량</span>
                   <input
@@ -348,16 +358,16 @@ export default function StockPage() {
                 </div>
               </div>
 
-              {/* 오른쪽 이미지 영역 */}
+              {/* 오른쪽 이미지 */}
               <div className="col-span-1 flex items-center justify-center">
                 <img
                   src={selectedProduct.image || "/images/default.jpg"}
                   alt="상품 이미지"
-                  className="w-48 h-48 object-contain"
+                  className="w-40 h-40 object-contain"
                 />
               </div>
 
-              {/* 하단 버튼 영역 */}
+              {/* 버튼 */}
               <div className="col-span-2 flex justify-end gap-4 mt-4">
                 <button
                   onClick={handleSave}
