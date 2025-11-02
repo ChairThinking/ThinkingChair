@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 tfluna_kiosk.py — TF-Luna → Kiosk WebSocket (session-aware gating, hard-lock)
 - 세션 진행 중에는 재감지(재무장) 금지
@@ -20,7 +19,7 @@ from websocket import create_connection, WebSocketConnectionClosedException
 # ======================= 환경변수/설정 =======================
 PORT                = os.environ.get("LIDAR_PORT", "/dev/ttyAMA0")  # /dev/ttyUSB0 등 환경에 맞게
 BAUDRATE            = int(os.environ.get("LIDAR_BAUD", "115200"))
-THRESHOLD_CM        = int(os.environ.get("LIDAR_THRESH_CM", "50"))  # 감지 임계 거리
+THRESHOLD_CM        = int(os.environ.get("LIDAR_THRESH_CM", "100"))  # 감지 임계 거리
 WS_SERVER           = os.environ.get("WS_SERVER", "ws://127.0.0.1:3000")
 
 # 하드락: 첫 감지 후 최소 이 시간 동안은 어떤 경우에도 재무장 금지
@@ -92,18 +91,17 @@ def ws_recv_loop(ws):
             with lock:
                 server_seen = True
                 if kind in START_EVENTS:
-                    # 세션 시작/진행: 재감지 금지
-                    session_active = False
+                    # 세션 시작/진행: 재감지 금지(= 락)
+                    session_active = True
                     session_armed  = True
-                    if first_hit_ts is None:
-                        first_hit_ts = time.time()  # 하드락 기준점이 없다면 기록
-                    print("🟡 서버 이벤트 수신 → session_active=True, session_armed=False")
+                    first_hit_ts is None
+                    print(f"🟡 서버 이벤트 수신(start) → session_active={session_active}, session_armed={session_armed}")
                 elif kind in END_EVENTS:
                     # 명시적 종료: 다음 손님 대기(재무장)
                     session_active = False
                     session_armed  = True
                     first_hit_ts   = None         # 하드락 해제
-                    print("🔵 서버 이벤트 수신 → session_active=False, session_armed=True")
+                    print(f"🔵 서버 이벤트 수신 → session_active={session_active}, session_armed={session_armed}")
 
         except Exception as e:
             print("WS recv error:", e)
