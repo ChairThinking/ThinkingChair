@@ -106,7 +106,7 @@ function getAnyOpenSession() {
 const SESS = new Map(); // sid -> session object
 function getSess(sessionId) {
   if (!SESS.has(sessionId))
-    SESS.set(sessionId, { open: false, code: null, lastSig: null, lastChangeAt: 0, lastScreen: null });
+    SESS.set(sessionId, { open: false, code: null, lastSig: null, lastChangeAt: 0, lastScreen: null, rescan: false });
   return SESS.get(sessionId);
 }
 let creatingSession = false;
@@ -408,8 +408,10 @@ module.exports = (server) => {
           ts: Date.now()
         });
 
-        // 4) 확인 화면으로 전환
-        sendGoToScreen(wss, "screen-items", sid);
+        // 4) 다음 화면 분기: 재스캔이면 바로 결제(card), 아니면 확인(items)
+        const nextScreen = S.rescan ? "screen-card" : "screen-items";
+        sendGoToScreen(wss, nextScreen, sid);
+        S.rescan = false; // 소모 후 OFF
         return;
       }
 
@@ -449,9 +451,11 @@ module.exports = (server) => {
             const ts = Date.now();
             broadcast(wss, { type:"stopVision", sessionId:sid, ts });
             broadcast(wss, { type:"scanComplete", reason:"stable-counts", sessionId:sid, sessionCode, ts });
-            // 확인(목록) 화면으로
-            broadcast(wss, { type:"goToScreen",  screen:"screen-items", sessionId:sid, sessionCode, ts });
-            broadcast(wss, { action:"goToScreen",screen:"screen-items", sessionId:sid, sessionCode, ts });
+            // 다음 화면 분기 
+            const nextScreen = S.rescan ? "screen-card" : "screen-items";
+            broadcast(wss, { type:"goToScreen",  screen: nextScreen, sessionId:sid, sessionCode, ts });
+            broadcast(wss, { action:"goToScreen",screen: nextScreen, sessionId:sid, sessionCode, ts });
+            S.rescan = false;
         }
 
         // 아이템 업로드 (기존 그대로)
@@ -465,6 +469,19 @@ module.exports = (server) => {
         return;
       }
 
+      // ── (신규) 다시 스캔 요청: 프런트가 보냄
+      if (kind === "requestRescan" || (kind === "goToScreen" && m.screen === "screen-rescan")) {
+        await startOrReuseSession(wss, sid);   // 세션 보장
+        const S = getSess(sid);
+        S.rescan = true;                       // 재스캔 플래그 ON
+        S.lastSig = null;                      // 안정화 타이머 리셋
+        S.lastChangeAt = 0;
+
+        // 화면 전환 + 비전 재시작
+        sendGoToScreen(wss, "screen-rescan", sid);
+        sendStartVision(wss, sid, "requestRescan");
+        return;
+      }
 
       // ── 카드 바인딩 (단발 + 타깃 브로드캐스트 + 디바운스)
       if (kind === "bindCardUid" || kind === "rfidUid") {

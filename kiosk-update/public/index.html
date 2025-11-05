@@ -64,6 +64,9 @@
             <!-- JS에서 행 렌더링: 썸네일 | 이름 | 수량(+/−) | 금액 -->
           </div>
 
+          <button id="btn-rescan" class="cta-pay">다시 스캔 하기</button>
+
+
           <div class="items-footer">
             <div class="items-pager">
               <button id="items-prev" class="btn-ghost">이전 페이지</button>
@@ -78,6 +81,21 @@
               </div>
               <button id="go-card" class="cta-pay">결제하기</button>
             </div>
+          </div>
+        </main>
+      </section>
+
+      <!-- 다시 스캔 화면 -->
+      <section id="screen-rescan" class="screen">
+        <header class="header">
+          <h1><span class="green">띵킹</span>마트</h1>
+        </header>
+        <main class="main-content scan-content">
+          <h2 class="title">다시 스캔중...</h2>
+          <h3 class="subtitle" style="color:#d22;">겹치지 않게 놓아주세요</h3>
+          <div class="loader-circle">
+            <span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span>
           </div>
         </main>
       </section>

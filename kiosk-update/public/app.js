@@ -35,6 +35,7 @@ let itemsState = {
 
 // 전역 가드 
 let visionRequested = false; // ★ 스캔 화면에서 startVision 1회만
+let rescanMode = false; // 🔁 '다시 스캔' 단계 여부
 
 const PRODUCT_BY_SPID = Object.create(null);
 let   __productMasterLoaded = false;
@@ -129,6 +130,7 @@ function goToScreen(screenId) {
     if (screenId === "screen-basket") onEnterScreenBasket();
     if (screenId === "screen-scan")   onEnterScreenScan();
     if (screenId === "screen-items")  onEnterScreenItems();
+    if (screenId === "screen-rescan") onEnterScreenRescan();
     if (screenId === "screen-card")   onEnterScreenCard();
     if (screenId === "screen-receipt") onEnterScreenReceipt();
   }
@@ -204,6 +206,21 @@ function renderItemsTable() {
   const next = document.getElementById("items-next");
   if (prev) prev.disabled = (page <= 1);
   if (next) next.disabled = (page >= totalPages);
+}
+
+function onEnterScreenRescan() {
+  console.log("🔁 다시 스캔 화면 진입");
+  // '다시 스캔'은 이전 startVision 여부와 상관없이 즉시 재시작
+  if (wsLocal?.readyState === WebSocket.OPEN) {
+    wsLocal.send(JSON.stringify({
+      action: "startVision",
+      type: "startVision",
+      mode: "rescan",
+      ts: Date.now()
+    }));
+  } else {
+    console.warn("⚠️ wsLocal 미연결 상태에서 재스캔 진입");
+  }
 }
 
 async function preloadStoreProducts() {
@@ -389,6 +406,25 @@ function setupItemsButtons() {
   const payBtn = document.querySelector("#go-card");     // 확인 화면의 "결제하기"
   const prev   = document.querySelector("#items-prev");  // 이전 페이지
   const next   = document.querySelector("#items-next");  // 다음 페이지
+  // ──다시 스캔 하기 ───────────────────────────────
+  const rescanBtn = document.getElementById("btn-rescan");
+  if (rescanBtn && !rescanBtn.dataset.bound) {
+    rescanBtn.addEventListener("click", (e) => {
+      e.preventDefault?.();
+      e.stopPropagation?.();
+
+      console.log("🔁 [다시 스캔 하기] 클릭");
+      rescanMode = true;         // 재스캔 단계 플래그 ON
+      visionRequested = false;   // 필요 시 일반 스캔 가드 초기화
+      // (선택) 확인표에서 임시 데이터 리셋하고 싶으면 여기서 처리
+      // itemsState.rows = []; renderItemsTable(); updateTotal(0);
+
+      showScreen?.("screen-rescan"); // 프로젝트에 showScreen 없으면:
+      goToScreen("screen-rescan");
+    });
+    rescanBtn.dataset.bound = "true";
+  }
+
   if (!payBtn || payBtn.dataset.bound) return;
 
   payBtn.addEventListener("click", (e) => {
@@ -653,10 +689,19 @@ function connectLocalWS() {
       if (wsLocal?.readyState === WebSocket.OPEN) {
         wsLocal.send(JSON.stringify({ action: "stopVision" }));
       }
-      goToScreen("screen-items"); // ← 전역 currentSessionCode를 쓰게 됨
+
+      // 🔁 재스캔이면 바로 카드화면으로, 아니면 확인화면으로
+      if (rescanMode) {
+        rescanMode = false;     // 한 번 쓰고 끔
+        goToScreen("screen-card");
+      } else {
+        goToScreen("screen-items");
+      }
+
       visionRequested = false;
       return;
     }
+
 
     // “카드 태깅 대기” 신호 → 카드 화면 유지/진입
     if (kind === "awaitingCard") {
