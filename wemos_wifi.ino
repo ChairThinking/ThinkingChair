@@ -12,7 +12,7 @@ static const char* TAG_URL = "http://13.209.14.101:8080/api/tag";
 // ===== 결제 서버 설정 =====
 static const char* KIOSK_ID   = "KIOSK-01";
 static const char* API_BASE   = "http://13.209.14.101:4000/api";
-static const bool  RECORD_TAG = false;   // 태그 수집 서버가 자주 실패하니 false 유지 권장
+static const bool  RECORD_TAG = true;   // 태그 수집 서버가 자주 실패하니 false 유지 권장
 
 // ===== 세션코드/타임스탬프 캐시 (★ 추가) =====
 String gSessionCode = "";      // 최근 "열린" 세션코드
@@ -56,14 +56,23 @@ void loop() {
     uid.trim();
     String norm = normalizeUid(uid);
 
-    Serial.print("UID: ");
-    Serial.println(norm);
+    Serial.print("UID: "); Serial.println(norm);
+    Serial.print("[bind] using session_code="); Serial.println(gSessionCode);
+    Serial.print("[bind] RECORD_TAG="); Serial.println(RECORD_TAG ? "true" : "false");
 
     // (선택) 태그 수집 서버로 전송 (실패해도 결제 흐름과 무관)
-    sendTagToCollector(norm);
+    if (RECORD_TAG) sendTagToCollector(norm);
 
     // 결제 세션으로 바인딩
     sendUidToBindEvent(norm);
+
+    // // UID 직접 바인딩도 함께 호출 → 해시 기록 보장
+    // String url2  = String(API_BASE) + "/purchase-sessions/" + gSessionCode + "/bind-card-uid";
+    // String body2 = String("{\"uid\":\"") + norm + "\"}";
+    // String resp2;
+    // int code2 = httpPostJson(url2, body2, resp2);
+    // Serial.print("[bind-uid] code="); Serial.println(code2);
+
   }
 }
 
@@ -152,37 +161,31 @@ void fetchCurrentSessionCode() {
   String body = httpGet(url);
   if (body.length() == 0) return;
 
-  // 404면 NO_OPEN_SESSION일 수 있음 → 기존 세션 유지
   if (body.indexOf("NO_OPEN_SESSION") >= 0) {
     Serial.println("[session] NO_OPEN_SESSION (keep current)");
     return;
   }
 
   String code = extractJsonStringValue(body, "session_code");
-  String st   = extractJsonStringValue(body, "status");       // ★
-  String at   = extractJsonStringValue(body, "created_at");   // ★
+  String st   = extractJsonStringValue(body, "status");
+  String at   = extractJsonStringValue(body, "created_at");
 
   Serial.print("[session] probe code="); Serial.print(code);
   Serial.print(" status="); Serial.print(st);
   Serial.print(" created_at="); Serial.println(at);
 
   if (code.length() == 0) return;
+  if (!isOpenStatus(st)) { Serial.println("[session] skip (not OPEN state)"); return; }
 
-  // 열린 상태만 채택
-  if (!isOpenStatus(st)) {
-    Serial.println("[session] skip (not OPEN state)");
-    return;
-  }
-
-  // 더 최신(created_at)일 때만 교체
-  if (code != gSessionCode && isNewerOrEqualTs(at, gSessionAt)) {
-    gSessionCode = code;
-    gSessionAt   = at;
+  // created_at 비교를 완화: 코드만 바뀌면 갱신
+  if (code != gSessionCode) {
+    gSessionCode = code; gSessionAt = at;
     Serial.print("[session] updated: "); Serial.println(gSessionCode);
   } else {
     Serial.print("[session] keep: "); Serial.println(gSessionCode.length() ? gSessionCode : "(none)");
   }
 }
+
 
 void sendTagToCollector(const String& uid) {
   if (WiFi.status() != WL_CONNECTED) return;
@@ -197,11 +200,11 @@ void sendTagToCollector(const String& uid) {
 
 void sendUidToBindEvent(const String& uid) {
   if (WiFi.status() != WL_CONNECTED) return;
-
   if (gSessionCode.length() < 4) {
     Serial.println("[bind] no session_code cached. skip.");
     return;
   }
+
 
   String url  = String(API_BASE) + "/purchase-sessions/" + gSessionCode + "/bind-card-event";
   String body = String("{\"uid\":\"") + uid + "\",\"record_tag\":" + (RECORD_TAG ? "true" : "false") + "}";
@@ -213,4 +216,13 @@ void sendUidToBindEvent(const String& uid) {
   Serial.print("[bind] POST "); Serial.println(url);
   Serial.print("[bind] code="); Serial.println(code);
   Serial.print("[bind] resp="); Serial.println(resp);
+
+  // 폴백: bind-card-event 실패 시 최소 해시만이라도 세션에 반영
+  if (code < 200 || code >= 300) {
+    String url2  = String(API_BASE) + "/purchase-sessions/" + gSessionCode + "/bind-card-uid";
+    String body2 = String("{\"uid\":\"") + uid + "\"}";
+    String resp2; int c2 = httpPostJson(url2, body2, resp2);
+    Serial.print("[bind-fallback] code="); Serial.println(c2);
+    Serial.print("[bind-fallback] resp="); Serial.println(resp2);
+  }
 }
