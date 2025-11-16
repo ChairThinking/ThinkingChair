@@ -12,7 +12,15 @@ router.get('/:session_code', ctrl.getSessionByCode);
 
 // ✅ (3) 장바구니
 router.post('/:session_code/items', ctrl.addItem);
+
+// 상품 삭제
 router.delete('/:session_code/items/:item_id', ctrl.removeItem);
+
+// 특정 상품만 수량 재설정(재스캔)
+router.put('/:session_code/items/reset', ctrl.resetItemQuantity);
+
+// 전체 삭제 후 YOLO 인식값으로 재구성(완전 교체)
+router.put('/:session_code/items/replace-all', ctrl.replaceAllItems);
 
 // ✅ (4) 카드 바인딩
 router.post('/:session_code/bind-card-uid', ctrl.bindCardUid);        // 수동/디버그용

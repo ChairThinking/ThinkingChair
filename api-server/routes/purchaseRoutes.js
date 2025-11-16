@@ -1,14 +1,15 @@
-const express = require('express');
-const router = express.Router();
+const express = require('express');  
+const router = express.Router();     
 const purchaseController = require('../controllers/purchaseController');
 
 // 구매 생성
-router.post('/', purchaseController.createPurchase);
+router.post('/create', purchaseController.createPurchase);
+
 // 여러 상품 구매
 router.post('/batch', purchaseController.createBatchPurchase);
 
 // 기간(또는 기본 7일) 매출 조회(KST)
-router.get('/', purchaseController.getPurchasesByDateRange);
+router.get('/range', purchaseController.getPurchasesByDateRange);
 
 // 누적 요약
 router.get('/summary', purchaseController.getPurchaseSummary);
