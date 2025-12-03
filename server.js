@@ -17,7 +17,7 @@ function createHash(data) {
 const mysqlConfig = {
     host: 'kiosk-db-new.cniu0ay84yaw.ap-northeast-2.rds.amazonaws.com',
     user: 'admin',
-    password: 'ghdwldud', // RDS 비밀번호 재설정한 것으로 입력
+    password: '', // RDS 비밀번호 재설정한 것으로 입력
     database: 'kiosk_db',
     timezone: 'Asia/Seoul' // 최종적으로 한국 시간대를 사용합니다.
 };
